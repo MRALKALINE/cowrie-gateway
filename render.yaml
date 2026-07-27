@@ -49,12 +49,11 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
 
-      # Paystack — set test and live keys in Render dashboard
-      - key: PAYSTACK_PK_TEST
+      # Nalopay — all three are required; set them in the Render dashboard.
+      # There is no test/live split: these are live credentials.
+      - key: NALOPAY_MERCHANT_ID
         sync: false
-      - key: PAYSTACK_SK_TEST
+      - key: NALOPAY_BASIC_AUTH
         sync: false
-      - key: PAYSTACK_PK_LIVE
-        sync: false
-      - key: PAYSTACK_SK_LIVE
+      - key: NALOPAY_SECRET_KEY
         sync: false

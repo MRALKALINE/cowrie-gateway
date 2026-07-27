@@ -6,7 +6,7 @@ const cfg = require('./lib/config');
 const api = require('./routes/api');
 const { migrate } = require('./lib/migrate');
 const { merchantId, apiKey, hashPassword } = require('./lib/util');
-const paystack = require('./lib/paystack');
+const nalopay = require('./lib/nalopay');
 
 const app = express();
 app.set('trust proxy', true);
@@ -21,7 +21,7 @@ app.use((req, res, next) => {
 });
 
 /* KYC submissions send up to 3 base64 images (~7 MB each); keep limit generous.
-   rawBody is only consumed by the Paystack webhook route. */
+   rawBody is retained for any webhook route that needs the unparsed payload. */
 app.use(express.json({ limit: '20mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
@@ -106,35 +106,41 @@ async function connectWithRetry(maxAttempts = 6, delayMs = 3000) {
 async function loadGatewaySettings() {
   const gs = (await store.settings.get('gateways')) || { activeGateway: null, installed: [], gateways: {} };
 
-  /* Sync Paystack env-var keys into DB so they appear in the admin dashboard.
-     We only overwrite a field when the env var is set and the DB slot is empty,
-     so manually-saved keys always win. */
+  /* Sync Nalopay env-var credentials into the DB so they show in the admin
+     dashboard. Nalopay has no test/live split, so its merchant_id + Basic
+     token + secret key are mapped onto the generic slots (see routes/api.js
+     nalopayKeysFrom). A slot is only filled when empty, so keys saved by hand
+     always win. */
   const envKeys = {
-    testPublicKey:  process.env.PAYSTACK_PK_TEST  || '',
-    testSecretKey:  process.env.PAYSTACK_SK_TEST  || '',
-    livePublicKey:  process.env.PAYSTACK_PK_LIVE  || process.env.PAYSTACK_PUBLIC_KEY  || '',
-    liveSecretKey:  process.env.PAYSTACK_SK_LIVE  || process.env.PAYSTACK_SECRET_KEY  || '',
+    testPublicKey: process.env.NALOPAY_MERCHANT_ID || '',
+    testSecretKey: process.env.NALOPAY_BASIC_AUTH  || '',
+    livePublicKey: '',
+    liveSecretKey: process.env.NALOPAY_SECRET_KEY  || '',
   };
-  const hasEnvKeys = Object.values(envKeys).some(Boolean);
-  if (hasEnvKeys) {
+  if (Object.values(envKeys).some(Boolean)) {
     gs.gateways = gs.gateways || {};
-    const existing = gs.gateways.paystack || {};
-    gs.gateways.paystack = {
+    const existing = gs.gateways.nalopay || {};
+    gs.gateways.nalopay = {
       testPublicKey: existing.testPublicKey || envKeys.testPublicKey,
       testSecretKey: existing.testSecretKey || envKeys.testSecretKey,
-      livePublicKey: existing.livePublicKey || envKeys.livePublicKey,
+      livePublicKey: '',
       liveSecretKey: existing.liveSecretKey || envKeys.liveSecretKey,
     };
     gs.installed = gs.installed || [];
-    if (!gs.installed.includes('paystack')) gs.installed.push('paystack');
-    if (!gs.activeGateway) gs.activeGateway = 'paystack';
+    if (!gs.installed.includes('nalopay')) gs.installed.push('nalopay');
+    if (!gs.activeGateway) gs.activeGateway = 'nalopay';
     await store.settings.set('gateways', gs);
-    console.log('  ✓ Paystack env-var keys synced to dashboard');
+    console.log('  ✓ Nalopay env-var credentials synced to dashboard');
   }
 
-  if (gs.gateways && gs.gateways.paystack) {
-    paystack.configureKeys(gs.gateways.paystack);
-    console.log('  ✓ Gateway keys loaded from database');
+  const saved = gs.gateways && gs.gateways.nalopay;
+  if (saved && saved.testPublicKey && saved.testSecretKey && saved.liveSecretKey) {
+    nalopay.configureKeys({
+      merchantId: saved.testPublicKey,
+      basicAuth:  saved.testSecretKey,
+      secretKey:  saved.liveSecretKey,
+    });
+    console.log('  ✓ Nalopay credentials loaded from database');
   }
 }
 
@@ -160,11 +166,10 @@ async function start() {
   app.listen(cfg.PORT, async () => {
     const all = await store.merchants.all();
     const demo = all.find((m) => m.demo);
-    const mode = (cfg.PAYSTACK_SECRET_KEY || '').startsWith('sk_live_') ? 'LIVE' : 'TEST';
     console.log('\n  Cowrie gateway running');
     console.log(`  -> http://localhost:${cfg.PORT}`);
-    console.log(`  Paystack mode: ${mode}`);
-    if (demo) console.log(`  Demo Cowrie key: ${demo.publicKey}  (not a Paystack key)`);
+    console.log(`  Nalopay: ${nalopay.configured() ? 'configured' : 'NOT CONFIGURED — payments will fail'}`);
+    if (demo) console.log(`  Demo Cowrie key: ${demo.publicKey}  (not a gateway key)`);
   });
 }
 
