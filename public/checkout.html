@@ -258,28 +258,11 @@ function payBtn(label){return `<button class="pay" id="pay"><span class="spin"><
 function formFor(m){
   const payLabel='Pay '+fmt(amount(),ccy());
   const info='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--muted)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>';
+  /* Card details are entered on Nalopay's hosted page — deliberately not
+     collected here, so no card data ever touches this app. */
   if(m==='card') return `
-    ${TEST_MODE?`<div class="test-creds">
-      <strong>⚡ TEST CARD</strong>
-      <div class="tcrow"><span>4084 0840 8408 4081</span><small>Verve</small></div>
-      <div class="tcrow"><span>CVV: 408 · Expiry: 01 / 99</span></div>
-      <div class="tcrow"><span>PIN: 0000 · OTP: 123456</span></div>
-    </div>`:''}
-    <div class="field">
-      <label>Card number</label>
-      <input class="mono" id="cardNum" placeholder="0000 0000 0000 0000" maxlength="19" inputmode="numeric" autocomplete="cc-number">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="field">
-        <label>Expiry date</label>
-        <input class="mono" id="cardExp" placeholder="MM / YY" maxlength="7" inputmode="numeric" autocomplete="cc-exp">
-      </div>
-      <div class="field">
-        <label>CVV</label>
-        <input class="mono" id="cardCvv" placeholder="•••" maxlength="4" type="password" inputmode="numeric" autocomplete="cc-csc">
-      </div>
-    </div>
-    ${payBtn(payLabel)}`;
+    <div class="hint">${info}You will be taken to our payment partner's secure page to enter your card details, then returned here.</div>
+    ${payBtn('Continue to secure payment')}`;
   if(m==='momo') return `
     ${TEST_MODE?`<div class="test-creds">
       <strong>⚡ TEST — MOBILE MONEY</strong>
@@ -324,31 +307,10 @@ function bindForm(){
     S.payerName=n;return true;
   }
   if(m==='card'){
-    const cn=$('#cardNum'),exp=$('#cardExp'),cvv=$('#cardCvv');
-    cn.addEventListener('input',()=>{
-      const v=cn.value.replace(/\D/g,'').slice(0,16);
-      cn.value=v.replace(/(.{4})(?=.)/g,'$1 ');
-      cn.classList.remove('bad');
-    });
-    exp.addEventListener('input',()=>{
-      const v=exp.value.replace(/\D/g,'').slice(0,4);
-      exp.value=v.length>2?v.slice(0,2)+' / '+v.slice(2):v;
-      exp.classList.remove('bad');
-    });
-    cvv.addEventListener('input',()=>cvv.classList.remove('bad'));
+    /* No card fields to bind — the shopper is redirected to Nalopay's page. */
     $('#pay').addEventListener('click',()=>{
       if(!validateName()) return;
-      const num=cn.value.replace(/\s/g,'');
-      const expRaw=exp.value.replace(/\D/g,'');
-      const c=cvv.value.trim();
-      if(num.length<15){cn.classList.add('bad');cn.focus();return;}
-      if(expRaw.length<4){exp.classList.add('bad');exp.focus();return;}
-      if(!c){cvv.classList.add('bad');cvv.focus();return;}
-      submitPay($('#pay'),'card',{
-        number:num,cvv:c,
-        expiry_month:expRaw.slice(0,2),
-        expiry_year:'20'+expRaw.slice(2,4)
-      });
+      submitPay($('#pay'),'card',{});
     });
   }else if(m==='momo'){
     $('#prov').querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{S.provider=btn.dataset.p;$('#prov').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===btn));}));
@@ -394,6 +356,9 @@ function handleNext(next,detail){
   else if(next==='bank_details'){S.bankDetail=detail;go('bank');}
   else if(next==='ussd_code'){S.ussdDetail=detail;go('ussd_wait');}
   else if(next==='open_url'&&detail){S.threeDsUrl=detail;go('verify_3ds');}
+  /* Nalopay hosted checkout is a full-page redirect — it sets X-Frame-Options,
+     so it cannot be framed like the old 3-D Secure step. */
+  else if(next==='redirect'&&detail){window.location.href=detail;}
   else{go('approve');startPolling();}
 }
 
@@ -672,9 +637,12 @@ async function boot(){
       try{
         const {charge}=await API.get('/api/charges/'+encodeURIComponent(ref));
         S.charge=charge;
-        /* returning from Paystack 3DS redirect — Paystack appends trxref to the URL */
-        if(params.get('trxref')&&charge.paystackRef&&charge.status!=='success'&&charge.status!=='failed'){
+        /* Returning from Nalopay's hosted checkout page. It redirects back to
+           referral_url with no status in the query, so always re-verify when a
+           session was started and the charge is still open. */
+        if(charge.nalopayRef&&charge.status!=='success'&&charge.status!=='failed'){
           try{const {charge:v}=await API.get('/api/charges/'+encodeURIComponent(ref)+'/verify');S.charge=v;}catch(e){}
+          if(S.charge.status!=='success'&&S.charge.status!=='failed'){startPolling();}
         }
       }catch(e){
         $('#body').innerHTML=`<div class="state">

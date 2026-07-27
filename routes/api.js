@@ -1,10 +1,9 @@
 'use strict';
-const crypto = require('crypto');
 const express = require('express');
 const store = require('../lib/store');
 const cfg = require('../lib/config');
 const payments = require('../lib/payments');
-const paystack = require('../lib/paystack');
+const nalopay = require('../lib/nalopay');
 const webhooks = require('../lib/webhooks');
 const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert } = require('../lib/email');
 const fx = require('../lib/fx');
@@ -272,10 +271,11 @@ router.get('/me', requireAuth, (req, res) => {
   res.json({ merchant: publicMerchant(req.merchant) });
 });
 
-/* Public config — tells the checkout whether we're in live or test mode */
+/* Public config — tells the checkout whether a gateway is wired up.
+   Nalopay publishes no test/live key prefixes, so "not configured" is the
+   only signal we can derive; NALOPAY_TEST_MODE lets you force the banner on. */
 router.get('/info', (req, res) => {
-  const key = paystack.secretKey('live') || paystack.secretKey('test') || '';
-  res.json({ testMode: !key || key.startsWith('sk_test_') });
+  res.json({ testMode: !nalopay.configured() || process.env.NALOPAY_TEST_MODE === 'true' });
 });
 
 router.put('/me/webhook', requireAuth, ah(async (req, res) => {
@@ -736,7 +736,7 @@ router.post('/admin/charges/:reference/mark-paid', requireAdminAuth, ah(async (r
   res.json({ charge });
 }));
 
-/* ========================= Paystack integration ========================= */
+/* ========================= Nalopay integration ========================== */
 
 async function emitWebhookIfTerminal(charge) {
   if (charge.status !== 'success' && charge.status !== 'failed') return;
@@ -769,202 +769,177 @@ function normalizePhone(raw) {
   return d;
 }
 
-function resolvePaystackStatus(charge, tx) {
-  if (!tx) return { next: 'pending' };
-  const CHAN = { mobile_money: 'mobile_money', bank_transfer: 'bank_transfer', ussd: 'ussd' };
-  switch (tx.status) {
-    case 'success':
-      charge.status = 'success'; charge.paidAt = Date.now();
-      charge.method = CHAN[tx.channel] || 'card';
-      charge.auth = {
-        provider: 'paystack', channel: tx.channel,
-        last4: tx.authorization && tx.authorization.last4,
-        brand: tx.authorization && tx.authorization.card_type,
-        expMonth: tx.authorization && tx.authorization.exp_month,
-        expYear: tx.authorization && String(tx.authorization.exp_year || '').slice(-2),
-        bank: tx.authorization && tx.authorization.bank,
-      };
-      return { next: 'success' };
-    case 'failed':
-      charge.status = 'failed';
-      charge.failure = { message: tx.gateway_response || 'Payment failed' };
-      return { next: 'failed' };
-    case 'send_otp': return { next: 'otp' };
-    case 'send_pin': return { next: 'pin' };
-    case 'open_url': return { next: 'open_url', detail: tx.url };
-    case 'pay_offline':
-      if (tx.channel === 'ussd') return { next: 'ussd_code', detail: { code: tx.ussd_code, text: tx.display_text } };
-      return { next: 'bank_details', detail: tx.data || {} };
-    case 'pending': return { next: 'pending', detail: tx.display_text };
-    default: return { next: 'pending' };
+/* Nalopay exposes three states only — PENDING / COMPLETED / FAILED. There is
+   no OTP or PIN step: mobile money is approved on the payer's handset, and
+   cards are handled on Nalopay's hosted page. Applies the terminal state to
+   the charge and returns the `next` value the checkout UI expects. */
+function applyNalopayStatus(charge, nalopayStatus, extra = {}) {
+  const mapped = nalopay.mapStatus(nalopayStatus);
+  if (mapped === 'success' && charge.status !== 'success') {
+    charge.status = 'success';
+    charge.paidAt = Date.now();
+    charge.auth = Object.assign({ provider: 'nalopay' }, charge.auth, extra.auth);
+  } else if (mapped === 'failed' && charge.status !== 'failed') {
+    charge.status = 'failed';
+    charge.failure = { message: extra.message || 'Payment failed' };
   }
+  return { next: mapped };
+}
+
+/* Nalopay network codes. Vodafone Ghana rebranded to Telecel — accept both. */
+const NETWORKS = { MTN: 'MTN', VODAFONE: 'TELECEL', TELECEL: 'TELECEL', AIRTELTIGO: 'AT', AT: 'AT' };
+
+function originOf(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  return `${proto}://${req.get('host')}`;
+}
+function nalopayCallbackUrl(req) { return `${originOf(req)}/api/webhooks/nalopay`; }
+
+/* Pull our own charge reference back out of a callback. Collections echo
+   `extra_data` verbatim; hosted checkout only echoes the product summary, so
+   the reference is smuggled through a product's metadata. */
+function cowrieRefFromCallback(body) {
+  const ex = body && body.extra_data;
+  if (!ex) return null;
+  if (ex.cowrie_reference) return ex.cowrie_reference;
+  if (Array.isArray(ex.products)) {
+    for (const p of ex.products) {
+      if (p && p.metadata && p.metadata.cowrie_reference) return p.metadata.cowrie_reference;
+    }
+  }
+  return null;
 }
 
 router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
   if (charge.status === 'success' || charge.status === 'failed') return res.json({ charge, next: charge.status });
 
-  const { method, email: bodyEmail, phone, provider, number, cvv, expiry_month, expiry_year, ussd_type, payerName } = req.body || {};
+  if (!nalopay.configured()) {
+    const e = new Error('Nalopay is not configured.'); e.status = 503; throw e;
+  }
+
+  const { method, phone, provider, payerName } = req.body || {};
   if (payerName && String(payerName).trim()) { charge.payerName = String(payerName).trim(); }
-  const email = (bodyEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bodyEmail) ? bodyEmail : null)
-    || charge.customerEmail || 'customer@cowrie.africa';
-  const paystackRef = `cwr_${charge.reference}_${Date.now()}`;
 
-  const body = { email, amount: charge.amount, currency: charge.currency || 'USD', reference: paystackRef, metadata: { cowrie_reference: charge.reference } };
+  /* Nalopay treats `reference` as the idempotency key, so each attempt needs
+     a fresh one — otherwise a retry after a failure is silently rejected. */
+  const attemptRef = `cwr_${charge.reference}_${Date.now()}`;
+
+  if (method === 'mobile_money') {
+    const network = NETWORKS[String(provider || '').toUpperCase()] || 'MTN';
+    const account = normalizePhone(phone);
+    if (account.length < 12) {
+      const e = new Error('Mobile money number is invalid.'); e.status = 400; throw e;
+    }
+    const data = await nalopay.collection({
+      accountNumber: account,
+      accountName: charge.payerName || 'Customer',
+      network,
+      amountMinor: charge.amount,
+      reference: attemptRef,
+      callbackUrl: nalopayCallbackUrl(req),
+      description: `Cowrie ${charge.reference}`,
+      extraData: { cowrie_reference: charge.reference },
+    });
+    console.log('[Nalopay /collection]', JSON.stringify({ ok: !!data.success, code: data.code, status: data.data && data.data.status, http: data.httpStatus }));
+    if (!data.success || !data.data) {
+      const msg = data.error ? `${data.error.description}` : (data.code || 'Charge failed');
+      throw Object.assign(new Error(msg), { status: 400 });
+    }
+    charge.method = 'mobile_money';
+    charge.nalopayOrderId = data.data.order_id;
+    charge.nalopayRef = attemptRef;
+    charge.auth = { provider: 'nalopay', channel: 'mobile_money', network, phone: account.slice(-10) };
+    await store.charges.update(charge);
+    /* Always PENDING here — the payer approves the prompt on their handset and
+       the checkout polls. `otp_code` is a USSD string to dial, not an OTP. */
+    return res.json({ charge, next: 'pending', detail: data.data.otp_code || null });
+  }
 
   if (method === 'card') {
-    body.card = { number: String(number || '').replace(/\s/g, ''), cvv: String(cvv || ''), expiry_month: String(expiry_month || ''), expiry_year: String(expiry_year || '') };
-    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-    body.callback_url = `${proto}://${req.get('host')}/checkout?reference=${charge.reference}`;
-  } else if (method === 'mobile_money') {
-    const PROV = { MTN: 'mtn', Vodafone: 'vod', AirtelTigo: 'tgo' };
-    body.mobile_money = { phone: normalizePhone(phone), provider: PROV[provider] || provider || 'mtn' };
-  } else if (method === 'bank') {
-    body.bank_transfer = { account_expires_at: new Date(Date.now() + 3_600_000).toISOString() };
-  } else if (method === 'ussd') {
-    body.ussd = { type: String(ussd_type || '737') };
+    const data = await nalopay.checkoutSession({
+      orderId: attemptRef,
+      customerName: charge.payerName || 'Customer',
+      referralUrl: `${originOf(req)}/checkout?reference=${encodeURIComponent(charge.reference)}`,
+      callbackUrl: nalopayCallbackUrl(req),
+      reference: attemptRef,
+      mode: 'CARD',
+      products: [{
+        name: `Payment ${charge.reference}`,
+        count: 1,
+        price: nalopay.toMajor(charge.amount),
+        /* Only path back to our charge — checkout callbacks echo the summary,
+           not the arbitrary extra_data that collections return. */
+        metadata: { cowrie_reference: charge.reference },
+      }],
+      itemCount: 1,
+      totalMinor: charge.amount,
+    });
+    console.log('[Nalopay /checkout]', JSON.stringify({ ok: !!data.success, code: data.code, http: data.httpStatus }));
+    if (!data.success || !data.data || !data.data.checkout_url) {
+      const msg = data.error ? `${data.error.description}` : (data.code || 'Checkout session failed');
+      throw Object.assign(new Error(msg), { status: 400 });
+    }
+    charge.method = 'card';
+    charge.nalopayRef = attemptRef;
+    charge.auth = { provider: 'nalopay', channel: 'card' };
+    await store.charges.update(charge);
+    /* Hosted page is a full redirect — there is no inline/access-code mode. */
+    return res.json({ charge, next: 'redirect', detail: data.data.checkout_url });
   }
 
-  const data = await paystack.charge(body, charge.mode || 'test');
-  console.log('[Paystack /charge]', JSON.stringify({ method, mode: charge.mode, status: data.status, message: data.message, data_status: data.data && data.data.status, gateway_response: data.data && data.data.gateway_response }));
-  /* Paystack returns status:false both for API errors (no data.data) and for
-     legitimate charge failures (data.data.status === 'failed', message === 'Charge attempted').
-     Only throw on true API errors — let resolvePaystackStatus handle charge failures. */
-  if (!data.status && (!data.data || !data.data.status)) {
-    throw Object.assign(new Error(data.message || 'Charge failed'), { status: 400 });
-  }
+  const e = new Error('Nalopay supports mobile money and card payments only.');
+  e.status = 400; throw e;
+}));
 
-  charge.paystackRef = paystackRef;
-  const result = resolvePaystackStatus(charge, data.data);
-  if (method === 'card') {
-    if (!charge.auth) charge.auth = {};
-    if (!charge.auth.last4 && number) charge.auth.last4 = String(number).replace(/\s/g, '').slice(-4);
-    if (!charge.auth.expMonth && expiry_month) charge.auth.expMonth = String(expiry_month).padStart(2, '0');
-    if (!charge.auth.expYear && expiry_year) charge.auth.expYear = String(expiry_year).slice(-2);
-  }
+/* Confirms a charge against Nalopay's own record. Never trusts a status that
+   arrived over the wire — the order_id is looked up server-side. */
+async function confirmWithNalopay(charge, orderId) {
+  const id = orderId || charge.nalopayOrderId;
+  if (!id) return { next: 'pending' };
+  const data = await nalopay.collectionStatus(id);
+  if (!data.success || !data.data) return { next: 'pending' };
+  if (!charge.nalopayOrderId) charge.nalopayOrderId = id;
+  const result = applyNalopayStatus(charge, data.data.status);
   await store.charges.update(charge);
   await emitWebhookIfTerminal(charge);
-  res.json({ charge, next: result.next, detail: result.detail });
-}));
-
-router.post('/charges/:reference/submit-otp', payLimiter, loadCharge, ah(async (req, res) => {
-  const { otp } = req.body || {};
-  if (!req.charge.paystackRef) throw Object.assign(new Error('No pending transaction.'), { status: 400 });
-  const data = await paystack.submitOtp(req.charge.paystackRef, String(otp || ''), req.charge.mode || 'test');
-  if (!data.status) throw new Error(data.message || 'OTP failed');
-  const result = resolvePaystackStatus(req.charge, data.data);
-  await store.charges.update(req.charge);
-  await emitWebhookIfTerminal(req.charge);
-  res.json({ charge: req.charge, next: result.next, detail: result.detail });
-}));
-
-router.post('/charges/:reference/submit-pin', payLimiter, loadCharge, ah(async (req, res) => {
-  const { pin } = req.body || {};
-  if (!req.charge.paystackRef) throw Object.assign(new Error('No pending transaction.'), { status: 400 });
-  const data = await paystack.submitPin(req.charge.paystackRef, String(pin || ''), req.charge.mode || 'test');
-  if (!data.status) throw new Error(data.message || 'PIN failed');
-  const result = resolvePaystackStatus(req.charge, data.data);
-  await store.charges.update(req.charge);
-  await emitWebhookIfTerminal(req.charge);
-  res.json({ charge: req.charge, next: result.next, detail: result.detail });
-}));
+  return result;
+}
 
 router.get('/charges/:reference/poll', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
   if (charge.status === 'success' || charge.status === 'failed') return res.json({ charge, next: charge.status });
-  if (!charge.paystackRef) return res.json({ charge, next: 'pending' });
-  const data = await paystack.getCharge(charge.paystackRef, charge.mode || 'test');
-  if (!data.status || !data.data) return res.json({ charge, next: 'pending' });
-  const result = resolvePaystackStatus(charge, data.data);
-  await store.charges.update(charge);
-  await emitWebhookIfTerminal(charge);
-  res.json({ charge, next: result.next, detail: result.detail });
+  const result = await confirmWithNalopay(charge);
+  res.json({ charge, next: result.next });
 }));
 
-router.post('/charges/:reference/paystack-init', payLimiter, loadCharge, ah(async (req, res) => {
-  const chargeMode = req.charge.mode || 'test';
-  const paystackSk = paystack.secretKey(chargeMode);
-  if (!paystackSk) {
-    const e = new Error(`Paystack ${chargeMode} key not configured.`); e.status = 503; throw e;
-  }
-  const charge = req.charge;
-  if (charge.status === 'success' || charge.status === 'failed') return res.json({ charge, alreadyComplete: true });
-  const email = (req.body.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.body.email) ? req.body.email : null)
-    || charge.customerEmail || 'customer@cowrie.africa';
-  const channels = Array.isArray(req.body && req.body.channels) ? req.body.channels : undefined;
-  const paystackRef = `cwr_${charge.reference}_${Date.now()}`;
-  const data = await paystack.initialize({ email, amount: charge.amount, currency: charge.currency || 'USD', reference: paystackRef, channels, metadata: { cowrie_reference: charge.reference, merchantId: charge.merchantId } }, chargeMode);
-  charge.paystackRef = paystackRef;
-  await store.charges.update(charge);
-  res.json({ accessCode: data.access_code, publicKey: paystack.publicKey(chargeMode), paystackRef });
-}));
-
+/* Called when the shopper returns from the hosted checkout page. */
 router.get('/charges/:reference/verify', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
   if (charge.status === 'success' || charge.status === 'failed') return res.json({ charge });
-  if (!charge.paystackRef) return res.json({ charge });
-  const data = await paystack.verify(charge.paystackRef, charge.mode || 'test');
-  if (!data.status) throw new Error(data.message || 'Paystack verification failed');
-  const tx = data.data;
-  const CHANNEL_MAP = { mobile_money: 'mobile_money', bank_transfer: 'bank_transfer', ussd: 'ussd' };
-  if (tx.status === 'success') {
-    charge.status = 'success'; charge.paidAt = Date.now();
-    charge.method = CHANNEL_MAP[tx.channel] || 'card';
-    charge.auth = {
-      provider: 'paystack', channel: tx.channel,
-      last4: tx.authorization && tx.authorization.last4,
-      brand: tx.authorization && tx.authorization.card_type,
-      expMonth: tx.authorization && tx.authorization.exp_month,
-      expYear: tx.authorization && String(tx.authorization.exp_year || '').slice(-2),
-      bank: tx.authorization && tx.authorization.bank,
-      phone: tx.customer && tx.customer.phone,
-    };
-    await store.charges.update(charge);
-    await emitWebhookIfTerminal(charge);
-  } else if (tx.status === 'failed') {
-    charge.status = 'failed';
-    charge.failure = { message: tx.gateway_response || 'Payment failed' };
-    await store.charges.update(charge);
-    await emitWebhookIfTerminal(charge);
-  }
+  await confirmWithNalopay(charge);
   res.json({ charge });
 }));
 
-router.post('/webhooks/paystack', (req, res, next) => {
-  (async () => {
-    const sig = req.headers['x-paystack-signature'];
-    const raw = req.rawBody;
-    if (!sig || !raw) return res.status(400).json({ error: 'missing_signature' });
-    const testKey = cfg.PAYSTACK_SK_TEST || cfg.PAYSTACK_SECRET_KEY;
-    const liveKey = cfg.PAYSTACK_SK_LIVE || cfg.PAYSTACK_SECRET_KEY;
-    const expectedTest = testKey ? crypto.createHmac('sha512', testKey).update(raw).digest('hex') : null;
-    const expectedLive = liveKey ? crypto.createHmac('sha512', liveKey).update(raw).digest('hex') : null;
-    if (sig !== expectedTest && sig !== expectedLive) return res.status(400).json({ error: 'invalid_signature' });
-    const event = JSON.parse(raw.toString());
-    if (event.event === 'charge.success') {
-      const cowrieRef = event.data && event.data.metadata && event.data.metadata.cowrie_reference;
-      if (cowrieRef) {
-        const charge = await store.charges.byReference(cowrieRef);
-        if (charge && charge.status !== 'success') {
-          const CHANNEL_MAP = { mobile_money: 'mobile_money', bank_transfer: 'bank_transfer', ussd: 'ussd' };
-          charge.status = 'success'; charge.paidAt = Date.now();
-          charge.method = CHANNEL_MAP[event.data.channel] || 'card';
-          charge.auth = {
-            provider: 'paystack', channel: event.data.channel,
-            last4: event.data.authorization && event.data.authorization.last4,
-            brand: event.data.authorization && event.data.authorization.card_type,
-            expMonth: event.data.authorization && event.data.authorization.exp_month,
-            expYear: event.data.authorization && String(event.data.authorization.exp_year || '').slice(-2),
-            bank: event.data.authorization && event.data.authorization.bank,
-          };
-          await store.charges.update(charge);
-          await emitWebhookIfTerminal(charge);
-        }
-      }
-    }
-    res.json({ received: true });
-  })().catch(next);
-});
+/* Nalopay callbacks carry NO signature, so the body is treated as an untrusted
+   nudge: it tells us which order to look at, and nothing more. The status is
+   always re-fetched from Nalopay before a charge is marked paid. Without this,
+   anyone who learns the callback URL could POST a forged COMPLETED. */
+router.post('/webhooks/nalopay', ah(async (req, res) => {
+  const body = req.body || {};
+  const orderId = body.order_id;
+  const cowrieRef = cowrieRefFromCallback(body);
+  console.log('[Nalopay callback]', JSON.stringify({ orderId, claimed: body.status, ref: cowrieRef }));
+
+  if (!orderId || !cowrieRef) return res.json({ received: true });
+
+  const charge = await store.charges.byReference(cowrieRef);
+  if (!charge) return res.json({ received: true });
+  if (charge.status === 'success' || charge.status === 'failed') return res.json({ received: true });
+
+  await confirmWithNalopay(charge, orderId);
+  res.json({ received: true });
+}));
 
 /* ========================= KYC ========================= */
 
@@ -1070,7 +1045,11 @@ router.post('/admin/kyc/:merchantId/reject', requireAdminAuth, ah(async (req, re
 
 const SUPPORTED_GATEWAYS = [
   /* ── Fully integrated ─────────────────────────────────────────────── */
-  { id: 'paystack',      name: 'Paystack',       status: 'integrated',   website: 'https://paystack.com',           fields: { testPublicKey: 'Test public key (pk_test_…)',        testSecretKey: 'Test secret key (sk_test_…)',         livePublicKey: 'Live public key (pk_live_…)',        liveSecretKey: 'Live secret key (sk_live_…)' } },
+  /* Nalopay has no test/live key split — it uses a merchant_id + Basic token
+     + secret key triple. The four generic slots are reused; the secret-bearing
+     values must sit in *SecretKey fields because only those are masked. */
+  { id: 'nalopay',       name: 'Nalopay',        status: 'integrated',   website: 'https://merchant.nalopay.com',   fields: { testPublicKey: 'Merchant ID',                        testSecretKey: 'Basic Auth token',                    livePublicKey: 'Not used — leave blank',             liveSecretKey: 'Secret key (for signing)' } },
+  { id: 'paystack',      name: 'Paystack',       status: 'configurable', website: 'https://paystack.com',           fields: { testPublicKey: 'Test public key (pk_test_…)',        testSecretKey: 'Test secret key (sk_test_…)',         livePublicKey: 'Live public key (pk_live_…)',        liveSecretKey: 'Live secret key (sk_live_…)' } },
 
   /* ── Global ────────────────────────────────────────────────────────── */
   { id: 'stripe',        name: 'Stripe',          status: 'configurable', website: 'https://stripe.com',             fields: { testPublicKey: 'Test publishable key (pk_test_…)',  testSecretKey: 'Test secret key (sk_test_…)',         livePublicKey: 'Live publishable key (pk_live_…)',   liveSecretKey: 'Live secret key (sk_live_…)' } },
@@ -1119,6 +1098,14 @@ const SUPPORTED_GATEWAYS = [
   { id: 'bani',          name: 'Bani',            status: 'configurable', website: 'https://getbani.com',            fields: { testPublicKey: 'Test public key',                    testSecretKey: 'Test secret key',                     livePublicKey: 'Live public key',                    liveSecretKey: 'Live secret key' } },
   { id: 'korapay',       name: 'Korapay',         status: 'configurable', website: 'https://korapay.com',            fields: { testPublicKey: 'Test public key (pk_test_…)',        testSecretKey: 'Test secret key (sk_test_…)',          livePublicKey: 'Live public key (pk_live_…)',         liveSecretKey: 'Live secret key (sk_live_…)' } },
 ];
+
+/* Maps the four generic key slots onto Nalopay's credential triple.
+   Returns null when incomplete so the env vars stay in charge. */
+function nalopayKeysFrom(g) {
+  if (!g) return null;
+  const keys = { merchantId: g.testPublicKey || '', basicAuth: g.testSecretKey || '', secretKey: g.liveSecretKey || '' };
+  return (keys.merchantId && keys.basicAuth && keys.secretKey) ? keys : null;
+}
 
 function maskSecret(val) {
   if (!val || val.length < 8) return val || '';
@@ -1169,7 +1156,7 @@ router.put('/admin/gateways/:id', requireAdminAuth, ah(async (req, res) => {
     liveSecretKey: liveSecretKey && !liveSecretKey.includes('•') ? liveSecretKey : (existing.liveSecretKey || ''),
   };
   await store.settings.set('gateways', gs);
-  if (id === 'paystack') paystack.configureKeys(gs.gateways.paystack);
+  if (id === 'nalopay') nalopay.configureKeys(nalopayKeysFrom(gs.gateways.nalopay));
   res.json({ ok: true });
 }));
 
@@ -1181,8 +1168,8 @@ router.put('/admin/gateways/:id/toggle', requireAdminAuth, ah(async (req, res) =
   const gs = (await store.settings.get('gateways')) || { activeGateway: null, installed: [], gateways: {} };
   gs.activeGateway = gs.activeGateway === id ? null : id;
   await store.settings.set('gateways', gs);
-  if (gs.activeGateway === 'paystack') paystack.configureKeys((gs.gateways || {}).paystack || null);
-  else if (id === 'paystack') paystack.configureKeys(null);
+  if (gs.activeGateway === 'nalopay') nalopay.configureKeys(nalopayKeysFrom((gs.gateways || {}).nalopay));
+  else if (id === 'nalopay') nalopay.configureKeys(null);
   res.json({ ok: true, activeGateway: gs.activeGateway });
 }));
 
@@ -1193,7 +1180,7 @@ router.delete('/admin/gateways/:id', requireAdminAuth, ah(async (req, res) => {
   if (gs.activeGateway === id) gs.activeGateway = null;
   if (gs.gateways) delete gs.gateways[id];
   await store.settings.set('gateways', gs);
-  if (id === 'paystack') paystack.configureKeys(null);
+  if (id === 'nalopay') nalopay.configureKeys(null);
   res.json({ ok: true });
 }));
 

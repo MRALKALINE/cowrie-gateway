@@ -1561,6 +1561,7 @@ function _gwLogo(abbr,bg,fg='#fff',sz=14){
   return `<svg viewBox="0 0 36 36" width="28" height="28"><rect width="36" height="36" rx="7" fill="${bg}"/><text x="18" y="${sz<=11?22:23}" text-anchor="middle" font-size="${sz}" font-weight="900" fill="${fg}" font-family="sans-serif">${abbr}</text></svg>`;
 }
 const GW_LOGOS={
+  nalopay:       _gwLogo('N',  '#1F6FEB'),
   /* Global */
   paystack:      _gwLogo('P',  '#00C3F7'),
   stripe:        _gwLogo('S',  '#635BFF'),
