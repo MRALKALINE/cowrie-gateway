@@ -526,6 +526,29 @@ router.post('/admin/members/:merchantId/lock', requireAdminAuth, ah(async (req, 
   res.json({ ok: true, merchantId: merchant.id, locked: merchant.locked });
 }));
 
+/* TEMP — full export before the member wipe. Render's free Postgres has no
+   backups, so this is the only recovery path. Remove after use. */
+router.get('/admin/temp-export', requireAdminAuth, ah(async (req, res) => {
+  const merchants = await store.merchants.all();
+  const charges = await store.charges.all();
+  res.json({ exportedAt: Date.now(), merchants, charges });
+}));
+
+/* TEMP — deletes every merchant. Requires ?confirm=DELETE-ALL-MEMBERS so it
+   cannot fire from a stray request. Remove after use. */
+router.delete('/admin/temp-clear-members', requireAdminAuth, ah(async (req, res) => {
+  if (req.query.confirm !== 'DELETE-ALL-MEMBERS') {
+    const e = new Error('Missing confirmation.'); e.status = 400; throw e;
+  }
+  const all = await store.merchants.all();
+  const deleted = [];
+  for (const m of all) {
+    await store.merchants.del(m.id);
+    deleted.push({ id: m.id, businessName: m.businessName, email: m.email });
+  }
+  res.json({ ok: true, deletedCount: deleted.length, deleted });
+}));
+
 router.delete('/admin/transactions', requireAdminAuth, ah(async (req, res) => {
   const { mode } = req.query; // ?mode=live or ?mode=test — omit for all
   if (mode === 'live' || mode === 'test') {
