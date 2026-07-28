@@ -787,13 +787,40 @@ function normalizePhone(raw) {
    the charge and returns the `next` value the checkout UI expects. */
 function applyNalopayStatus(charge, nalopayStatus, extra = {}) {
   const mapped = nalopay.mapStatus(nalopayStatus);
-  if (mapped === 'success' && charge.status !== 'success') {
+  const now = Date.now();
+
+  /* Nalopay's status payload carries no decline reason, so record everything
+     it does return. Without this a failed charge is just "Payment failed",
+     which is undiagnosable after the fact. */
+  if (extra.raw) {
+    charge.nalopay = {
+      status: nalopayStatus,
+      reference: extra.raw.reference,
+      charges: extra.raw.charges,
+      amountAfterCharges: extra.raw.amount_after_charges,
+      reportedAmount: extra.raw.amount,
+      observedAt: now,
+    };
+  }
+
+  /* Terminal states are final. A late or duplicate status check must never
+     flip an already-paid charge to failed — that would silently erase a
+     collected payment from the merchant's balance. */
+  if (charge.status === 'success' || charge.status === 'failed') {
+    return { next: charge.status };
+  }
+
+  if (mapped === 'success') {
     charge.status = 'success';
-    charge.paidAt = Date.now();
+    charge.paidAt = now;
+    charge.updatedAt = now;
+    charge.resolvedInMs = charge.createdAt ? now - charge.createdAt : null;
     charge.auth = Object.assign({ provider: 'nalopay' }, charge.auth, extra.auth);
-  } else if (mapped === 'failed' && charge.status !== 'failed') {
+  } else if (mapped === 'failed') {
     charge.status = 'failed';
-    charge.failure = { message: extra.message || 'Payment failed' };
+    charge.updatedAt = now;
+    charge.resolvedInMs = charge.createdAt ? now - charge.createdAt : null;
+    charge.failure = { message: extra.message || 'Payment failed', nalopayStatus };
   }
   return { next: mapped };
 }
@@ -864,6 +891,9 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
     charge.method = 'mobile_money';
     charge.nalopayOrderId = data.data.order_id;
     charge.nalopayRef = attemptRef;
+    charge.attemptCount = (charge.attemptCount || 0) + 1;
+    charge.lastAttemptAt = Date.now();
+    charge.updatedAt = Date.now();
     charge.auth = { provider: 'nalopay', channel: 'mobile_money', network, phone: account.slice(-10) };
     await store.charges.update(charge);
     /* Always PENDING here — the payer approves the prompt on their handset and
@@ -897,6 +927,9 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
     }
     charge.method = 'card';
     charge.nalopayRef = attemptRef;
+    charge.attemptCount = (charge.attemptCount || 0) + 1;
+    charge.lastAttemptAt = Date.now();
+    charge.updatedAt = Date.now();
     charge.auth = { provider: 'nalopay', channel: 'card' };
     await store.charges.update(charge);
     /* Hosted page is a full redirect — there is no inline/access-code mode. */
@@ -915,7 +948,7 @@ async function confirmWithNalopay(charge, orderId) {
   const data = await nalopay.collectionStatus(id);
   if (!data.success || !data.data) return { next: 'pending' };
   if (!charge.nalopayOrderId) charge.nalopayOrderId = id;
-  const result = applyNalopayStatus(charge, data.data.status);
+  const result = applyNalopayStatus(charge, data.data.status, { raw: data.data });
   await store.charges.update(charge);
   await emitWebhookIfTerminal(charge);
   return result;
