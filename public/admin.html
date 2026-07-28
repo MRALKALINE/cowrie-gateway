@@ -510,6 +510,13 @@ const statusTag = s => {
 };
 
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* esc() stops attribute breakout but not a javascript:/data: scheme, which
+   contains none of the escaped characters. Anything not http(s) is rendered
+   as plain text instead of a clickable link. */
+function safeHttpUrl(u){
+  if(!u) return null;
+  try{const p=new URL(u);return (p.protocol==='http:'||p.protocol==='https:')?u:null;}catch{return null;}
+}
 
 /* ---- API ---- */
 const API = {
@@ -1068,10 +1075,10 @@ async function renderMembers(el){
         <div style="min-width:0;flex:1">
           <div style="font-weight:800;font-size:18px">${esc(m.businessName)}${m.locked?' <span style="font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.05em;color:#EF6A4C;background:rgba(239,106,76,.14);border:1px solid rgba(239,106,76,.35);padding:2px 7px;border-radius:6px;vertical-align:middle">🔒 LOCKED</span>':''}</div>
           <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px">${esc(m.email)}</div>
-          ${m.websiteUrl?`<a href="${esc(m.websiteUrl)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11px;color:var(--plum-br);margin-top:4px;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${safeHttpUrl(m.websiteUrl)?`<a href="${esc(safeHttpUrl(m.websiteUrl))}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11px;color:var(--plum-br);margin-top:4px;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
             <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>
             ${esc(m.websiteUrl.replace(/^https?:\/\//,''))}
-          </a>`:'<span style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.2);margin-top:4px;display:block">No website set</span>'}
+          </a>`:(m.websiteUrl?`<span style="font-family:var(--mono);font-size:11px;color:#EF6A4C;margin-top:4px;display:block" title="Not a http(s) URL — shown as text, not a link">⚠ ${esc(m.websiteUrl)}</span>`:'<span style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.2);margin-top:4px;display:block">No website set</span>')}
         </div>
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:right;flex-shrink:0">Joined<br>${fmtDate(m.createdAt)}</div>
       </div>

@@ -56,6 +56,20 @@ function publicMerchant(m) {
   return rest;
 }
 
+/* `new URL()` alone accepts javascript:, data:, file: and ftp:. These values
+   are rendered as clickable links in the admin console, so the scheme must be
+   restricted here — the dashboard's client-side check is bypassed by any
+   merchant calling the API directly with their own token. */
+function assertWebUrl(url, field = 'url') {
+  let parsed;
+  try { parsed = new URL(url); }
+  catch { const e = new Error(`${field} must be a valid absolute URL.`); e.status = 400; throw e; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    const e = new Error(`${field} must start with http:// or https://`); e.status = 400; throw e;
+  }
+  return parsed;
+}
+
 /* ── middleware ── */
 async function requireAuth(req, res, next) {
   try {
@@ -280,9 +294,7 @@ router.get('/info', (req, res) => {
 
 router.put('/me/webhook', requireAuth, ah(async (req, res) => {
   const { url } = req.body || {};
-  if (url) {
-    try { new URL(url); } catch { const e = new Error('url must be a valid absolute URL.'); e.status = 400; throw e; }
-  }
+  if (url) assertWebUrl(url, 'webhook url');
   req.merchant.webhookUrl = url || null;
   await store.merchants.update(req.merchant);
   res.json({ merchant: publicMerchant(req.merchant) });
@@ -290,9 +302,7 @@ router.put('/me/webhook', requireAuth, ah(async (req, res) => {
 
 router.put('/me/website', requireAuth, ah(async (req, res) => {
   const { url } = req.body || {};
-  if (url) {
-    try { new URL(url); } catch { const e = new Error('url must be a valid absolute URL.'); e.status = 400; throw e; }
-  }
+  if (url) assertWebUrl(url, 'website url');
   req.merchant.websiteUrl = url || null;
   await store.merchants.update(req.merchant);
   res.json({ merchant: publicMerchant(req.merchant) });
