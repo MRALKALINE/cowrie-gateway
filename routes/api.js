@@ -834,8 +834,11 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
   if (payerName && String(payerName).trim()) { charge.payerName = String(payerName).trim(); }
 
   /* Nalopay treats `reference` as the idempotency key, so each attempt needs
-     a fresh one — otherwise a retry after a failure is silently rejected. */
-  const attemptRef = `cwr_${charge.reference}_${Date.now()}`;
+     a fresh one. Keep it SHORT and in Cowrie's native cwr_ format — Nalopay
+     rejects long / underscore-heavy references, and a merchant's own
+     charge.reference can be long (e.g. an integrator's cgw_… id). We map the
+     attempt back to the charge via nalopayOrderId + cowrie_reference metadata. */
+  const attemptRef = `cwr_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
   if (method === 'mobile_money') {
     const network = NETWORKS[String(provider || '').toUpperCase()] || 'MTN';
