@@ -387,7 +387,9 @@ router.post('/charges', chargeLimiter, resolveMerchantByKey, ah(async (req, res)
   charge.mode = mode;
   if (idemKey) charge.idempotencyKey = idemKey;
   await store.charges.update(charge);
-  res.status(201).json({ charge });
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const checkout_url = `${proto}://${req.get('host')}/checkout?reference=${charge.reference}`;
+  res.status(201).json({ charge, checkout_url });
 }));
 
 router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
