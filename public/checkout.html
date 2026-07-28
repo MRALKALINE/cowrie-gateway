@@ -507,7 +507,7 @@ function renderTransferSent(b){
     <p style="font-size:13px;color:var(--faint);margin-top:8px">Returning you to ${merchantName()}…</p>
   </div>`;
   /* Redirect back to merchant site after 2.5 s */
-  setTimeout(()=>{ location.href=cbUrl; }, 2500);
+  setTimeout(()=>{ location.href=cbUrl; }, 1500);
 }
 
 function renderUssdWait(b){
@@ -553,7 +553,7 @@ function stateSuccess(){
   const ML={card:'Card',mobile_money:'Mobile money',bank_transfer:'Bank transfer',ussd:'USSD'};
   const methodLabel=ML[ch||S.charge.method]||S.charge.method||'—';
   const cbUrl=backUrl();
-  setTimeout(()=>{ location.href=cbUrl; }, 3500);
+  setTimeout(()=>{ location.href=cbUrl; }, 1500);
   return `<div class="state">
     <div class="ic done-ic"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
     <h3>Payment successful</h3><p>Your payment of ${fmt(amount(),ccy())} to ${merchantName()} is complete.</p>
