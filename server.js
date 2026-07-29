@@ -5,7 +5,7 @@ const store = require('./lib/store');
 const cfg = require('./lib/config');
 const api = require('./routes/api');
 const { migrate } = require('./lib/migrate');
-const { merchantId, apiKey, hashPassword } = require('./lib/util');
+const { apiKey } = require('./lib/util');
 const nalopay = require('./lib/nalopay');
 
 const app = express();
@@ -44,32 +44,11 @@ app.use((e, _req, res, _next) => {
   res.status(status).json({ error: e.code || 'server_error', message: e.message || 'Something went wrong.' });
 });
 
-async function seedDemoMerchant() {
-  const existing = await store.merchants.byEmail('demo@adom.shop');
-  if (existing && existing.livePublicKey) return; // fully migrated
-  const base = existing || {};
-  const merchant = {
-    id: base.id || merchantId(),
-    businessName: 'Adɔm Stores',
-    email: 'demo@adom.shop',
-    passwordHash: base.passwordHash || hashPassword('password123'),
-    publicKey:  base.publicKey  || apiKey('public',  'test'),
-    secretKey:  base.secretKey  || apiKey('secret',  'test'),
-    livePublicKey:  base.livePublicKey  || apiKey('public',  'live'),
-    liveSecretKey:  base.liveSecretKey  || apiKey('secret',  'live'),
-    webhookSecret: base.webhookSecret || ('whsec_' + apiKey('secret', 'test').slice(16)),
-    webhookUrl: base.webhookUrl || null,
-    demo: true,
-    createdAt: base.createdAt || Date.now(),
-  };
-  if (existing) {
-    await store.merchants.update(merchant);
-    console.log('  Updated demo merchant (added live keys)');
-  } else {
-    await store.merchants.insert(merchant);
-    console.log('  Seeded demo merchant: demo@adom.shop / password123');
-  }
-}
+/* The demo merchant seeding was removed. It recreated itself on every boot
+   with a hardcoded password, was hidden from the admin members list, and
+   handed out a working payment key via /api/demo/public-key — so live
+   integrations picked it up and their payments were collected against an
+   account nobody could see. */
 
 async function migrateMerchantKeys() {
   const all = await store.merchants.all();
@@ -160,16 +139,17 @@ function enforceProductionSecurity() {
 async function start() {
   enforceProductionSecurity();
   await connectWithRetry();
-  await seedDemoMerchant();
   await migrateMerchantKeys();
   await loadGatewaySettings();
   app.listen(cfg.PORT, async () => {
     const all = await store.merchants.all();
-    const demo = all.find((m) => m.demo);
+    const demo = all.filter((m) => m.demo);
     console.log('\n  Cowrie gateway running');
     console.log(`  -> http://localhost:${cfg.PORT}`);
     console.log(`  Nalopay: ${nalopay.configured() ? 'configured' : 'NOT CONFIGURED — payments will fail'}`);
-    if (demo) console.log(`  Demo Cowrie key: ${demo.publicKey}  (not a gateway key)`);
+    if (demo.length) {
+      console.warn(`  ⚠ ${demo.length} demo merchant(s) still present — these accept real payments. Lock or remove them.`);
+    }
   });
 }
 

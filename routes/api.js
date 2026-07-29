@@ -417,12 +417,10 @@ router.post('/charges/:reference/confirm', loadCharge, ah(async (req, res) => {
   res.json({ charge });
 }));
 
-router.get('/demo/public-key', ah(async (req, res) => {
-  const all = await store.merchants.all();
-  const demo = all.find((m) => m.demo);
-  if (!demo) { const e = new Error('No demo merchant available.'); e.status = 404; throw e; }
-  res.json({ publicKey: demo.publicKey });
-}));
+/* Removed: this handed a working payment key to any unauthenticated caller.
+   Integrations picked it up instead of their own key, so their payments were
+   collected against the hidden demo account and never appeared in their
+   dashboard. Merchants take their keys from /dashboard. */
 
 /* ========================= Admin ========================= */
 
@@ -492,7 +490,10 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
 }));
 
 router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
-  const merchants = (await store.merchants.all()).filter((m) => !m.demo);
+  /* Demo accounts used to be hidden here. They still take real payments, so
+     hiding them meant money could be collected against an account that never
+     appeared in the console — flag them instead of filtering them out. */
+  const merchants = await store.merchants.all();
   const [allCharges, allPayouts] = await Promise.all([store.charges.all(), store.payouts.all()]);
   const rates = await fx.getRates();
   const toGhs = (amount, currency) => fx.toGhsMinor(amount, currency, rates);
@@ -514,6 +515,7 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
       websiteUrl: m.websiteUrl || null,
       createdAt: m.createdAt,
       locked: !!m.locked,
+      demo: !!m.demo,
       liveCollected: Math.max(0, liveOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0) - livePaidOut),
       testCollected: Math.max(0, testOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0) - testPaidOut),
       totalTransactions: charges.length,
@@ -855,6 +857,17 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
 
   if (!nalopay.configured()) {
     const e = new Error('Nalopay is not configured.'); e.status = 503; throw e;
+  }
+
+  /* Nalopay has no sandbox: every collection hits the live account and moves
+     real money. Under Paystack a test key meant a simulated charge, so a
+     test-mode charge here would silently take real funds while being labelled
+     "test". Refuse rather than let that happen. */
+  if ((charge.mode || 'test') !== 'live') {
+    const e = new Error(
+      'Test mode is not available — the payment provider has no sandbox, so every charge moves real money. Use your live API key (pk_live_…).',
+    );
+    e.status = 400; throw e;
   }
 
   const { method, phone, provider, payerName } = req.body || {};
