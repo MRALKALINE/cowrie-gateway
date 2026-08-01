@@ -38,10 +38,29 @@ app.get('/admin',      (_, res) => res.sendFile(path.join(pub, 'admin.html')));
 app.get('/admin-login',(_, res) => res.sendFile(path.join(pub, 'admin-login.html')));
 
 app.use('/api', (_, res) => res.status(404).json({ error: 'not_found', message: 'Unknown endpoint.' }));
-app.use((e, _req, res, _next) => {
+
+/* Errors we raise deliberately carry a status and a message written for the
+   user. Anything else is an unexpected failure whose message comes from a
+   library or an upstream service — those were being forwarded verbatim, which
+   is how a database error ended up printed on a merchant's login form. Those
+   now log in full with a short reference and return a generic message, so a
+   user-reported symptom can be matched to an exact stack trace in the logs. */
+app.use((e, req, res, _next) => {
   const status = e.status || 500;
-  if (status >= 500) console.error(e);
-  res.status(status).json({ error: e.code || 'server_error', message: e.message || 'Something went wrong.' });
+  const expected = Boolean(e.status) && status < 500;
+
+  if (!expected) {
+    const ref = Math.random().toString(36).slice(2, 8);
+    console.error(`[error ${ref}] ${req.method} ${req.originalUrl} -> ${status}`);
+    console.error(e);
+    return res.status(status).json({
+      error: e.code || 'server_error',
+      message: `Something went wrong on our side. Please try again. (ref: ${ref})`,
+      ref,
+    });
+  }
+
+  res.status(status).json({ error: e.code || 'client_error', message: e.message });
 });
 
 /* The demo merchant seeding was removed. It recreated itself on every boot
