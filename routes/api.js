@@ -366,9 +366,22 @@ router.post('/charges/:reference/set-amount', payLimiter, loadCharge, ah(async (
   const charge = req.charge;
   if (!charge.openAmount) { const e = new Error('This charge has a fixed amount.'); e.status = 400; throw e; }
   if (charge.status !== 'pending') { const e = new Error('Charge is no longer pending.'); e.status = 409; throw e; }
-  const amount = Math.round(Number(req.body.amount) * 100);
-  if (!amount || amount < 100) { const e = new Error('Enter a valid amount (minimum 1).'); e.status = 400; throw e; }
-  charge.amount = amount;
+
+  /* NOTE: this endpoint takes MAJOR units (what the shopper types, e.g. 50 for
+     GHS 50) while POST /charges takes MINOR units. Different callers, kept
+     deliberately — the checkout form posts what was typed.
+
+     Number('Infinity') and Number('1e400') both survive the old
+     `!amount || amount < 100` check, and JSON.stringify then writes Infinity
+     out as null, leaving a charge with a null amount. Validate the input
+     before scaling it, not after. */
+  const major = Number(req.body.amount);
+  if (!Number.isFinite(major) || major < 1 || major > MAX_AMOUNT_MAJOR) {
+    const e = new Error(`Enter a valid amount between 1 and ${MAX_AMOUNT_MAJOR.toLocaleString()}.`);
+    e.status = 400; throw e;
+  }
+  charge.amount = Math.round(major * 100);
+  charge.updatedAt = Date.now();
   charge.openAmount = false;
   await store.charges.update(charge);
   res.json({ charge });
@@ -630,7 +643,9 @@ router.post('/admin/settlements', requireAdminAuth, ah(async (req, res) => {
   const unsettled = (await store.charges.all()).filter((c) => c.status === 'success' && !c.settled);
   if (!unsettled.length) { const e = new Error('No unsettled successful transactions to settle.'); e.status = 400; throw e; }
   const amount = unsettled.reduce((s, c) => s + c.amount, 0);
-  await Promise.all(unsettled.map((c) => { c.settled = true; return store.charges.update(c); }));
+  /* Admin bulk settlement — marks a flag on already-terminal charges, so the
+     version check would only add spurious conflicts. */
+  await Promise.all(unsettled.map((c) => { c.settled = true; return store.charges.forceUpdate(c); }));
   const settlement = await store.settlements.insert({
     id: genId('stl_'), merchantId: 'admin', amount, currency: 'USD',
     chargeCount: unsettled.length, status: 'completed', createdAt: Date.now(),
@@ -722,7 +737,8 @@ router.post('/admin/charges/:reference/mark-paid', requireAdminAuth, ah(async (r
   charge.method = charge.method || 'bank_transfer';
   charge.updatedAt = Date.now();
   charge.successEmailSent = true;
-  await store.charges.update(charge);
+  /* Deliberate admin override — must land even against a concurrent poll. */
+  await store.charges.forceUpdate(charge);
   const merchant = await store.merchants.byId(charge.merchantId);
   if (merchant) {
     webhooks.emit(merchant, 'charge.success', charge).catch(() => {});
@@ -825,6 +841,10 @@ function applyNalopayStatus(charge, nalopayStatus, extra = {}) {
   return { next: mapped };
 }
 
+/* Upper bound on a single charge, in major units. Guards against overflow
+   values (Infinity, 1e400) and typos with an extra three zeros. */
+const MAX_AMOUNT_MAJOR = 1_000_000;
+
 /* Nalopay network codes. Vodafone Ghana rebranded to Telecel — accept both. */
 const NETWORKS = { MTN: 'MTN', VODAFONE: 'TELECEL', TELECEL: 'TELECEL', AIRTELTIGO: 'AT', AT: 'AT' };
 
@@ -899,14 +919,18 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
       const msg = data.error ? `${data.error.description}` : (data.code || 'Charge failed');
       throw Object.assign(new Error(msg), { status: 400 });
     }
-    charge.method = 'mobile_money';
-    charge.nalopayOrderId = data.data.order_id;
-    charge.nalopayRef = attemptRef;
-    charge.attemptCount = (charge.attemptCount || 0) + 1;
-    charge.lastAttemptAt = Date.now();
-    charge.updatedAt = Date.now();
-    charge.auth = { provider: 'nalopay', channel: 'mobile_money', network, phone: account.slice(-10) };
-    await store.charges.update(charge);
+    /* Losing this write would strand the charge: without nalopayOrderId there
+       is no way to poll Nalopay for the outcome, so a real payment could never
+       be confirmed. Retry rather than write once and hope. */
+    await saveChargeWithRetry(charge, (c) => {
+      c.method = 'mobile_money';
+      c.nalopayOrderId = data.data.order_id;
+      c.nalopayRef = attemptRef;
+      c.attemptCount = (c.attemptCount || 0) + 1;
+      c.lastAttemptAt = Date.now();
+      c.updatedAt = Date.now();
+      c.auth = { provider: 'nalopay', channel: 'mobile_money', network, phone: account.slice(-10) };
+    });
     /* Always PENDING here — the payer approves the prompt on their handset and
        the checkout polls. `otp_code` is a USSD string to dial, not an OTP. */
     return res.json({ charge, next: 'pending', detail: data.data.otp_code || null });
@@ -936,13 +960,14 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
       const msg = data.error ? `${data.error.description}` : (data.code || 'Checkout session failed');
       throw Object.assign(new Error(msg), { status: 400 });
     }
-    charge.method = 'card';
-    charge.nalopayRef = attemptRef;
-    charge.attemptCount = (charge.attemptCount || 0) + 1;
-    charge.lastAttemptAt = Date.now();
-    charge.updatedAt = Date.now();
-    charge.auth = { provider: 'nalopay', channel: 'card' };
-    await store.charges.update(charge);
+    await saveChargeWithRetry(charge, (c) => {
+      c.method = 'card';
+      c.nalopayRef = attemptRef;
+      c.attemptCount = (c.attemptCount || 0) + 1;
+      c.lastAttemptAt = Date.now();
+      c.updatedAt = Date.now();
+      c.auth = { provider: 'nalopay', channel: 'card' };
+    });
     /* Hosted page is a full redirect — there is no inline/access-code mode. */
     return res.json({ charge, next: 'redirect', detail: data.data.checkout_url });
   }
@@ -951,6 +976,27 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
   e.status = 400; throw e;
 }));
 
+/* store.charges.update() is version-checked and returns null when another
+   writer got there first. `apply` is re-run against a freshly loaded copy on
+   each attempt, so it must be safe to repeat — applyNalopayStatus is, because
+   it refuses to change an already-terminal charge. The caller's object is
+   updated in place with whatever finally landed. */
+async function saveChargeWithRetry(charge, apply, attempts = 4) {
+  let current = charge;
+  for (let i = 0; i < attempts; i++) {
+    const result = apply(current);
+    if (await store.charges.update(current)) {
+      if (current !== charge) Object.assign(charge, current);
+      return result;
+    }
+    const fresh = await store.charges.byReference(charge.reference);
+    if (!fresh) return null;           // charge deleted underneath us
+    current = fresh;
+  }
+  const e = new Error('This charge is being updated, please try again.');
+  e.status = 409; throw e;
+}
+
 /* Confirms a charge against Nalopay's own record. Never trusts a status that
    arrived over the wire — the order_id is looked up server-side. */
 async function confirmWithNalopay(charge, orderId) {
@@ -958,9 +1004,12 @@ async function confirmWithNalopay(charge, orderId) {
   if (!id) return { next: 'pending' };
   const data = await nalopay.collectionStatus(id);
   if (!data.success || !data.data) return { next: 'pending' };
-  if (!charge.nalopayOrderId) charge.nalopayOrderId = id;
-  const result = applyNalopayStatus(charge, data.data.status, { raw: data.data });
-  await store.charges.update(charge);
+
+  const result = await saveChargeWithRetry(charge, (c) => {
+    if (!c.nalopayOrderId) c.nalopayOrderId = id;
+    return applyNalopayStatus(c, data.data.status, { raw: data.data });
+  });
+  if (!result) return { next: 'pending' };
   await emitWebhookIfTerminal(charge);
   return result;
 }
