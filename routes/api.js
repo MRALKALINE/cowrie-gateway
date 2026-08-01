@@ -758,7 +758,11 @@ async function emitWebhookIfTerminal(charge) {
   if (!merchant) return;
   const type = charge.status === 'success' ? 'charge.success' : 'charge.failed';
   webhooks.emit(merchant, type, charge).catch(() => {});
-  if (charge.status === 'success' && !charge.successEmailSent && (charge.mode || 'test') === 'live') {
+  /* One alert per successful payment is the largest consumer of the email
+     quota — on a busy day it can exhaust Resend's free 100/day and block
+     signup OTPs. Set DEPOSIT_ALERTS=off to reserve the quota for OTPs. */
+  const alertsOff = String(process.env.DEPOSIT_ALERTS || '').toLowerCase() === 'off';
+  if (!alertsOff && charge.status === 'success' && !charge.successEmailSent && (charge.mode || 'test') === 'live') {
     charge.successEmailSent = true;
     await store.charges.update(charge);
     const toList = adminEmails();
