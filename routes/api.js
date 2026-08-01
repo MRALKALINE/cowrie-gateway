@@ -401,21 +401,15 @@ router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
   }});
 }));
 
-router.post('/charges/:reference/method', loadCharge, ah(async (req, res) => {
-  const { method, details } = req.body || {};
-  const charge = await payments.submitMethod(req.charge, method, details || {});
-  res.json({ charge });
-}));
+/* REMOVED — /method, /authorize and /confirm were survivors of the original
+   simulated demo gateway and were never taken out when real money started
+   flowing. All three were unauthenticated and settled a charge without any
+   payment: /method moved a charge into an "awaiting" state, then /confirm
+   marked it paid outright and /authorize accepted any six digits. Anyone
+   holding a checkout link could mark their own order paid and trigger the
+   merchant's charge.success webhook. Settlement now happens only in
+   confirmWithNalopay(), against Nalopay's own record of the payment. */
 
-router.post('/charges/:reference/authorize', loadCharge, ah(async (req, res) => {
-  const charge = await payments.authorizeOtp(req.charge, (req.body || {}).otp);
-  res.json({ charge });
-}));
-
-router.post('/charges/:reference/confirm', loadCharge, ah(async (req, res) => {
-  const charge = await payments.confirmExternal(req.charge);
-  res.json({ charge });
-}));
 
 /* Removed: this handed a working payment key to any unauthenticated caller.
    Integrations picked it up instead of their own key, so their payments were
