@@ -9,9 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --plum:#5B2C8F; --plum-deep:#3D1D62; --plum-light:#7B45B8;
-  --gold:#C8860A; --mint:#1A9B6E; --coral:#EF6A4C;
-  --dark:#09071A; --dark2:#120C24; --dark3:#1C1335;
+  --plum:#0C6E77; --plum-deep:#07474F; --plum-light:#17A2B0;
+  --gold:#C8901A; --mint:#1A9B6E; --coral:#EF6A4C;
+  --dark:#050E12; --dark2:#071519; --dark3:#0A1F26;
   --display:'Plus Jakarta Sans',sans-serif; --mono:'JetBrains Mono',monospace;
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -21,7 +21,7 @@ body{
   -webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;
   padding:24px;position:relative;overflow:hidden;
 }
-body::before{content:'';position:fixed;top:-25%;left:-20%;width:65%;height:65%;background:radial-gradient(circle,rgba(91,44,143,.4),transparent 65%);filter:blur(70px);pointer-events:none}
+body::before{content:'';position:fixed;top:-25%;left:-20%;width:65%;height:65%;background:radial-gradient(circle,rgba(12,110,119,.4),transparent 65%);filter:blur(70px);pointer-events:none}
 body::after{content:'';position:fixed;bottom:-25%;right:-20%;width:60%;height:60%;background:radial-gradient(circle,rgba(200,134,10,.22),transparent 65%);filter:blur(60px);pointer-events:none}
 .bg-dots{position:fixed;inset:0;background-image:radial-gradient(rgba(255,255,255,.05) 1.2px,transparent 1.2px);background-size:28px 28px;pointer-events:none;z-index:0}
 
@@ -52,7 +52,7 @@ h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-b
   outline:none;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none
 }
 .field input::placeholder{color:rgba(255,255,255,.22)}
-.field input:focus{border-color:rgba(139,92,246,.65);background:rgba(255,255,255,.08);box-shadow:0 0 0 3px rgba(91,44,143,.22)}
+.field input:focus{border-color:rgba(63,199,212,.65);background:rgba(255,255,255,.08);box-shadow:0 0 0 3px rgba(12,110,119,.22)}
 .field input.bad{border-color:rgba(239,106,76,.65);background:rgba(239,106,76,.07)}
 .inp-wrap{position:relative}
 .toggle-pw{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;font-family:var(--mono);font-size:11px;font-weight:700;color:rgba(255,255,255,.35);padding:4px 8px;letter-spacing:.05em;cursor:pointer;transition:color .15s}
@@ -67,7 +67,7 @@ h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-b
   cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;
   transition:background .15s,transform .15s,box-shadow .15s;position:relative;margin-top:8px;
 }
-.btn:hover{background:var(--plum-deep);transform:translateY(-1px);box-shadow:0 10px 28px -8px rgba(91,44,143,.5)}
+.btn:hover{background:var(--plum-deep);transform:translateY(-1px);box-shadow:0 10px 28px -8px rgba(12,110,119,.5)}
 .btn:active{transform:none;box-shadow:none}
 .btn.loading{color:transparent;pointer-events:none}
 .btn .spin{position:absolute;width:18px;height:18px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
@@ -85,7 +85,7 @@ h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-b
 .otp-email{font-family:var(--mono);font-size:12.5px;color:rgba(200,134,10,.9);background:rgba(200,134,10,.1);border:1px solid rgba(200,134,10,.25);border-radius:8px;padding:8px 12px;margin-bottom:22px;text-align:center;word-break:break-all}
 .otp-boxes{display:flex;gap:9px;justify-content:center;margin:22px 0 8px}
 .otp-boxes input{width:42px;height:52px;text-align:center;font-family:var(--mono);font-weight:700;font-size:22px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.1);border-radius:11px;color:#fff;outline:none;transition:border-color .15s,box-shadow .15s}
-.otp-boxes input:focus{border-color:rgba(139,92,246,.65);box-shadow:0 0 0 3px rgba(91,44,143,.22)}
+.otp-boxes input:focus{border-color:rgba(63,199,212,.65);box-shadow:0 0 0 3px rgba(12,110,119,.22)}
 .resend-row{text-align:center;margin-top:14px;font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.3)}
 .resend-row button{background:none;border:none;color:rgba(200,134,10,.85);font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;padding:0;transition:color .15s}
 .resend-row button:hover{color:#F5C464}

@@ -9,9 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --plum:#5B2C8F; --plum-deep:#3D1D62; --plum-light:#7B45B8;
-  --gold:#C8860A; --mint:#1A9B6E; --coral:#EF6A4C;
-  --dark:#09071A; --dark2:#120C24; --dark3:#1C1335;
+  --plum:#0C6E77; --plum-deep:#07474F; --plum-light:#17A2B0;
+  --gold:#C8901A; --mint:#1A9B6E; --coral:#EF6A4C;
+  --dark:#050E12; --dark2:#071519; --dark3:#0A1F26;
   --display:'Plus Jakarta Sans',sans-serif; --mono:'JetBrains Mono',monospace;
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -22,7 +22,7 @@ body{
   padding:24px;position:relative;overflow:hidden;
 }
 /* ambient glows */
-body::before{content:'';position:fixed;top:-25%;left:-20%;width:65%;height:65%;background:radial-gradient(circle,rgba(91,44,143,.4),transparent 65%);filter:blur(70px);pointer-events:none}
+body::before{content:'';position:fixed;top:-25%;left:-20%;width:65%;height:65%;background:radial-gradient(circle,rgba(12,110,119,.4),transparent 65%);filter:blur(70px);pointer-events:none}
 body::after{content:'';position:fixed;bottom:-25%;right:-20%;width:60%;height:60%;background:radial-gradient(circle,rgba(200,134,10,.22),transparent 65%);filter:blur(60px);pointer-events:none}
 /* dot grid */
 .bg-dots{position:fixed;inset:0;background-image:radial-gradient(rgba(255,255,255,.05) 1.2px,transparent 1.2px);background-size:28px 28px;pointer-events:none;z-index:0}
@@ -45,12 +45,12 @@ body::after{content:'';position:fixed;bottom:-25%;right:-20%;width:60%;height:60
 
 .restricted-badge{
   display:inline-flex;align-items:center;gap:8px;
-  background:rgba(91,44,143,.2);border:1px solid rgba(91,44,143,.35);
+  background:rgba(12,110,119,.2);border:1px solid rgba(12,110,119,.35);
   border-radius:8px;padding:7px 13px;
-  font-family:var(--mono);font-size:10px;color:#C9AEFF;letter-spacing:.08em;
+  font-family:var(--mono);font-size:10px;color:#8FE3EC;letter-spacing:.08em;
   text-transform:uppercase;margin-bottom:26px;
 }
-.badge-dot{width:6px;height:6px;border-radius:50%;background:#9B5CF6;animation:pulse 2s ease-in-out infinite}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:#17A2B0;animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-bottom:6px}
@@ -64,7 +64,7 @@ h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-b
   outline:none;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none
 }
 .field input::placeholder{color:rgba(255,255,255,.22)}
-.field input:focus{border-color:rgba(139,92,246,.65);background:rgba(255,255,255,.08);box-shadow:0 0 0 3px rgba(91,44,143,.22)}
+.field input:focus{border-color:rgba(63,199,212,.65);background:rgba(255,255,255,.08);box-shadow:0 0 0 3px rgba(12,110,119,.22)}
 .field input.bad{border-color:rgba(239,106,76,.65);background:rgba(239,106,76,.07)}
 .err{color:#F87171;font-size:12.5px;margin-top:5px;display:none;font-family:var(--mono)}
 .err.show{display:block}
@@ -75,7 +75,7 @@ h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-b
   cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;
   transition:background .15s,transform .15s,box-shadow .15s;position:relative;margin-top:6px;
 }
-.btn:hover{background:var(--plum-deep);transform:translateY(-1px);box-shadow:0 10px 28px -8px rgba(91,44,143,.5)}
+.btn:hover{background:var(--plum-deep);transform:translateY(-1px);box-shadow:0 10px 28px -8px rgba(12,110,119,.5)}
 .btn:active{transform:none;box-shadow:none}
 .btn.loading{color:transparent;pointer-events:none}
 .btn .spin{position:absolute;width:18px;height:18px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
@@ -84,8 +84,8 @@ h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-b
 @keyframes spin{to{transform:rotate(360deg)}}
 
 .card-foot{margin-top:26px;text-align:center;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.25)}
-.card-foot a{color:rgba(139,92,246,.7);font-weight:500}
-.card-foot a:hover{color:#A78BFA}
+.card-foot a{color:rgba(63,199,212,.7);font-weight:500}
+.card-foot a:hover{color:#3FC7D4}
 
 @media(max-width:480px){
   body{padding:16px;align-items:flex-start;padding-top:32px}

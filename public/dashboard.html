@@ -10,11 +10,11 @@
 <style>
 /* ─── Tokens ─── */
 :root{
-  --ivory:#0F0C22; --ivory-2:#141028; --white:#0D0A1E;
-  --ink:#EAE5F5; --ink-soft:rgba(234,229,245,.65); --muted:rgba(234,229,245,.4); --faint:rgba(234,229,245,.22);
+  --ivory:#071318; --ivory-2:#0B1B21; --white:#061116;
+  --ink:#E4EEF0; --ink-soft:rgba(228,238,240,.65); --muted:rgba(228,238,240,.4); --faint:rgba(228,238,240,.22);
   --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.06);
-  --plum:#5B2C8F; --plum-deep:#3A1A60; --plum-br:#7B45B8; --plum-tint:rgba(91,44,143,.22);
-  --gold:#E0A12E; --gold-deep:#B8801C; --gold-tint:rgba(224,161,46,.18);
+  --plum:#0C6E77; --plum-deep:#06424A; --plum-br:#17A2B0; --plum-tint:rgba(12,110,119,.22);
+  --gold:#E0A12E; --gold-deep:#C8901A; --gold-tint:rgba(224,161,46,.18);
   --mint:#1FA877; --mint-tint:rgba(31,168,119,.18); --coral:#EF6A4C; --coral-tint:rgba(239,106,76,.15);
   --display:'Plus Jakarta Sans',sans-serif; --body:'Plus Jakarta Sans',sans-serif; --mono:'JetBrains Mono',monospace;
 }
@@ -22,7 +22,7 @@
 /* ─── Reset ─── */
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{background:#09071A;color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.55;min-height:100vh;overflow-x:hidden}
+body{background:#050E12;color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.55;min-height:100vh;overflow-x:hidden}
 ::selection{background:var(--plum);color:#fff}
 a{color:inherit;text-decoration:none}
 button{font-family:inherit;cursor:pointer}
@@ -32,7 +32,7 @@ input,select,textarea{font-family:inherit}
 .bg-scene{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
 .bg-grid{
   position:absolute;left:-40%;right:-40%;bottom:-5%;height:75%;
-  background-image:linear-gradient(rgba(91,44,143,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(91,44,143,.25) 1px,transparent 1px);
+  background-image:linear-gradient(rgba(12,110,119,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(12,110,119,.25) 1px,transparent 1px);
   background-size:70px 70px;
   transform:perspective(550px) rotateX(58deg);transform-origin:center bottom;
   animation:gridScroll 10s linear infinite;
@@ -42,7 +42,7 @@ input,select,textarea{font-family:inherit}
 @keyframes gridScroll{from{background-position:0 0}to{background-position:0 70px}}
 .bg-dots{position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.045) 1px,transparent 1px);background-size:28px 28px}
 .orb{position:absolute;border-radius:50%;filter:blur(90px);will-change:transform}
-.orb-1{width:700px;height:700px;top:-250px;left:-200px;background:radial-gradient(circle,rgba(91,44,143,.45),transparent 65%);animation:drift1 28s ease-in-out infinite}
+.orb-1{width:700px;height:700px;top:-250px;left:-200px;background:radial-gradient(circle,rgba(12,110,119,.45),transparent 65%);animation:drift1 28s ease-in-out infinite}
 .orb-2{width:580px;height:580px;bottom:-200px;right:-150px;background:radial-gradient(circle,rgba(200,134,10,.22),transparent 65%);animation:drift2 33s ease-in-out infinite}
 .orb-3{width:450px;height:450px;top:40%;left:55%;background:radial-gradient(circle,rgba(31,168,119,.14),transparent 65%);animation:drift3 24s ease-in-out infinite;transform:translate(-50%,-50%)}
 @keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,-55px) scale(1.05)}}
@@ -56,10 +56,10 @@ input,select,textarea{font-family:inherit}
 /* ─── Topbar ─── */
 .topbar{
   position:sticky;top:0;z-index:40;
-  background:rgba(9,7,26,.78);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+  background:rgba(5,14,18,.78);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
   border-bottom:1px solid var(--line);transition:border-color .3s,background .3s;
 }
-.topbar.stuck{border-color:rgba(91,44,143,.3);background:rgba(9,7,26,.92)}
+.topbar.stuck{border-color:rgba(12,110,119,.3);background:rgba(5,14,18,.92)}
 .topbar-in{display:flex;align-items:center;gap:14px;padding:15px 0}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:800;font-size:18px;letter-spacing:-.02em}
 .shell{width:26px;height:26px;border-radius:50% 50% 48% 48%/60% 60% 40% 40%;background:linear-gradient(135deg,var(--gold),var(--plum-br));position:relative;box-shadow:inset 0 -2px 4px rgba(0,0,0,.3),0 0 12px rgba(224,161,46,.25)}
@@ -77,13 +77,13 @@ input,select,textarea{font-family:inherit}
   background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:18px;padding:14px;align-self:start;
   position:sticky;top:72px;
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  box-shadow:0 8px 32px rgba(0,0,0,.4),0 0 0 1px rgba(91,44,143,.06) inset;
+  box-shadow:0 8px 32px rgba(0,0,0,.4),0 0 0 1px rgba(12,110,119,.06) inset;
 }
 .side-sect{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;padding-left:10px}
 .nav{display:flex;flex-direction:column;gap:3px}
 .nav a{padding:9px 10px;border-radius:11px;border:1px solid transparent;color:var(--ink-soft);font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:9px;transition:.15s}
 .nav a:hover{background:rgba(255,255,255,.06);border-color:var(--line);color:var(--ink)}
-.nav a.active{background:rgba(91,44,143,.2);border-color:rgba(91,44,143,.35);color:#C9AEFF;box-shadow:0 0 18px rgba(91,44,143,.15)}
+.nav a.active{background:rgba(12,110,119,.2);border-color:rgba(12,110,119,.35);color:#8FE3EC;box-shadow:0 0 18px rgba(12,110,119,.15)}
 .nav a svg{flex-shrink:0;opacity:.5}
 .nav a.active svg{opacity:1}
 .nav-sep{height:1px;background:var(--line-2);margin:8px 0}
@@ -110,7 +110,7 @@ input,select,textarea{font-family:inherit}
   cursor:default;will-change:transform;
   box-shadow:0 4px 20px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);
 }
-.kpi-tile:hover{border-color:rgba(91,44,143,.45);box-shadow:0 0 0 1px rgba(91,44,143,.2),0 20px 50px rgba(0,0,0,.5),0 0 40px rgba(91,44,143,.12)}
+.kpi-tile:hover{border-color:rgba(12,110,119,.45);box-shadow:0 0 0 1px rgba(12,110,119,.2),0 20px 50px rgba(0,0,0,.5),0 0 40px rgba(12,110,119,.12)}
 .kpi-tile .kl{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
 .kpi-tile .kv{font-family:var(--display);font-weight:900;font-size:27px;letter-spacing:-.02em;background:linear-gradient(135deg,#fff,rgba(255,255,255,.75));-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1.1}
 .kpi-tile .ks{margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--muted)}
@@ -141,27 +141,27 @@ input,select,textarea{font-family:inherit}
 
 /* ─── Buttons ─── */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:10px;padding:8px 13px;border:1px solid var(--line);background:rgba(255,255,255,.05);font-weight:700;font-size:13px;transition:.15s;cursor:pointer;color:var(--ink);white-space:nowrap}
-.btn:hover{border-color:rgba(91,44,143,.5);color:#C9AEFF;background:rgba(91,44,143,.12)}
+.btn:hover{border-color:rgba(12,110,119,.5);color:#8FE3EC;background:rgba(12,110,119,.12)}
 .btn:disabled{opacity:.45;pointer-events:none}
-.btn.primary{background:var(--plum);border-color:var(--plum-br);color:#fff;box-shadow:0 4px 18px rgba(91,44,143,.3)}
-.btn.primary:hover{background:var(--plum-deep);box-shadow:0 6px 24px rgba(91,44,143,.45)}
+.btn.primary{background:var(--plum);border-color:var(--plum-br);color:#fff;box-shadow:0 4px 18px rgba(12,110,119,.3)}
+.btn.primary:hover{background:var(--plum-deep);box-shadow:0 6px 24px rgba(12,110,119,.45)}
 .btn.sm{padding:5px 9px;font-size:11.5px;border-radius:8px}
 
 /* ─── Fields ─── */
 .field{margin-bottom:13px}
 .field .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
 .field input,.field select{width:100%;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;outline:none;font-size:13.5px;background:rgba(255,255,255,.06);transition:.15s;color:var(--ink)}
-.field select option{background:#1A1535;color:var(--ink)}
+.field select option{background:#0A1D24;color:var(--ink)}
 .field input::placeholder{color:var(--faint)}
-.field input:focus,.field select:focus{border-color:rgba(91,44,143,.55);box-shadow:0 0 0 3px rgba(91,44,143,.15)}
+.field input:focus,.field select:focus{border-color:rgba(12,110,119,.55);box-shadow:0 0 0 3px rgba(12,110,119,.15)}
 .formrow{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 @media(max-width:520px){.formrow{grid-template-columns:1fr}}
 
 /* ─── Method tabs (payout) ─── */
 .method-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
 .method-tab{border:1px solid var(--line);background:rgba(255,255,255,.05);border-radius:10px;padding:10px;font-weight:700;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s;cursor:pointer}
-.method-tab:hover{border-color:rgba(91,44,143,.35);color:var(--ink)}
-.method-tab.on{border-color:rgba(91,44,143,.5);background:rgba(91,44,143,.18);color:#C9AEFF}
+.method-tab:hover{border-color:rgba(12,110,119,.35);color:var(--ink)}
+.method-tab.on{border-color:rgba(12,110,119,.5);background:rgba(12,110,119,.18);color:#8FE3EC}
 
 /* ─── Key row ─── */
 .keyrow{display:flex;gap:8px;align-items:center}
@@ -177,24 +177,24 @@ input,select,textarea{font-family:inherit}
 .empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:13.5px}
 .empty strong{display:block;color:var(--ink);font-size:15px;margin-bottom:6px}
 .spinbox{padding:48px 20px;text-align:center}
-.spin{width:36px;height:36px;border:3px solid rgba(91,44,143,.3);border-top-color:var(--plum-br);border-radius:50%;margin:0 auto 12px;animation:sp .75s linear infinite}
+.spin{width:36px;height:36px;border:3px solid rgba(12,110,119,.3);border-top-color:var(--plum-br);border-radius:50%;margin:0 auto 12px;animation:sp .75s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 
 /* ─── Search ─── */
 .search-row{margin-bottom:14px}
 .search-row input{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:10px 13px;outline:none;font-size:13.5px;background:rgba(255,255,255,.06);transition:.15s;color:var(--ink)}
 .search-row input::placeholder{color:var(--faint)}
-.search-row input:focus{border-color:rgba(91,44,143,.55);box-shadow:0 0 0 3px rgba(91,44,143,.15)}
+.search-row input:focus{border-color:rgba(12,110,119,.55);box-shadow:0 0 0 3px rgba(12,110,119,.15)}
 
 /* ─── 3D reveal ─── */
 .r3d{will-change:transform,opacity;transform:perspective(900px) rotateX(18deg) translateY(30px) scale(.97);opacity:0}
 .r3d.in{transform:perspective(900px) rotateX(0) translateY(0) scale(1);opacity:1}
 
 /* ─── Mobile bottom nav ─── */
-.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(9,7,26,.96);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-top:1px solid rgba(255,255,255,.09);padding-bottom:env(safe-area-inset-bottom,0px)}
+.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(5,14,18,.96);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-top:1px solid rgba(255,255,255,.09);padding-bottom:env(safe-area-inset-bottom,0px)}
 .mob-nav-in{display:flex;align-items:stretch}
 .mob-nav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px 8px;color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:.03em;text-transform:uppercase;transition:.15s;text-decoration:none}
-.mob-nav a.active{color:#C9AEFF}
+.mob-nav a.active{color:#8FE3EC}
 .mob-nav a svg{opacity:.45;transition:.15s}
 .mob-nav a.active svg{opacity:1}
 @media(max-width:860px){.mob-nav{display:block}}
@@ -220,7 +220,7 @@ input,select,textarea{font-family:inherit}
       <div class="topbar-right">
         <div style="position:relative;display:flex;align-items:center">
           <svg style="position:absolute;left:9px;pointer-events:none;opacity:.4" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
-          <input id="globalSearch" type="search" placeholder="Search reference…" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:6px 11px 6px 28px;color:#fff;font-family:var(--mono);font-size:11.5px;width:170px;outline:none;transition:.15s" onfocus="this.style.borderColor='rgba(91,44,143,.55)';this.style.boxShadow='0 0 0 3px rgba(91,44,143,.15)'" onblur="this.style.borderColor='';this.style.boxShadow=''">
+          <input id="globalSearch" type="search" placeholder="Search reference…" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:6px 11px 6px 28px;color:#fff;font-family:var(--mono);font-size:11.5px;width:170px;outline:none;transition:.15s" onfocus="this.style.borderColor='rgba(12,110,119,.55)';this.style.boxShadow='0 0 0 3px rgba(12,110,119,.15)'" onblur="this.style.borderColor='';this.style.boxShadow=''">
         </div>
         <span class="merchant-tag" id="merchantTag">…</span>
         <!-- Mode dropdown -->
@@ -230,7 +230,7 @@ input,select,textarea{font-family:inherit}
             <span id="modeLabel">TEST</span>
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          <div id="modeDropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:#1a1035;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;min-width:180px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:999">
+          <div id="modeDropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:#091b22;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;min-width:180px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:999">
             <div id="ddTest" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:.12s" onmouseenter="this.style.background='rgba(255,255,255,.07)'" onmouseleave="this.style.background=''">
               <span style="width:7px;height:7px;border-radius:50%;background:#E0A12E;flex-shrink:0"></span>
               <div>
@@ -248,7 +248,7 @@ input,select,textarea{font-family:inherit}
           </div>
         </div>
         <!-- Toast notification -->
-        <div id="modeToast" style="display:none;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1a1035;border:1px solid rgba(239,106,76,.4);border-radius:12px;padding:13px 20px;font-size:13.5px;color:#EF6A4C;z-index:9999;box-shadow:0 12px 36px rgba(0,0,0,.5);display:none;align-items:center;gap:10px;max-width:360px;text-align:center">
+        <div id="modeToast" style="display:none;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#091b22;border:1px solid rgba(239,106,76,.4);border-radius:12px;padding:13px 20px;font-size:13.5px;color:#EF6A4C;z-index:9999;box-shadow:0 12px 36px rgba(0,0,0,.5);display:none;align-items:center;gap:10px;max-width:360px;text-align:center">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6z"/></svg>
           <span>Complete account verification before switching to Live mode.</span>
         </div>
@@ -421,15 +421,15 @@ async function renderOverview(el){
   const kycStatus=kycRes?.kycStatus||'none';
 
   const kycBanner=kycStatus==='none'?`
-    <div class="kyc-banner r3d" style="background:rgba(91,44,143,.13);border:1px solid rgba(91,44,143,.3);border-radius:13px;padding:16px 20px;margin-bottom:18px;display:flex;align-items:center;gap:14px;cursor:pointer" id="kycBannerBtn">
-      <div style="width:38px;height:38px;border-radius:50%;background:rgba(91,44,143,.25);display:grid;place-items:center;flex-shrink:0">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C9AEFF" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6z"/></svg>
+    <div class="kyc-banner r3d" style="background:rgba(12,110,119,.13);border:1px solid rgba(12,110,119,.3);border-radius:13px;padding:16px 20px;margin-bottom:18px;display:flex;align-items:center;gap:14px;cursor:pointer" id="kycBannerBtn">
+      <div style="width:38px;height:38px;border-radius:50%;background:rgba(12,110,119,.25);display:grid;place-items:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#8FE3EC" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6z"/></svg>
       </div>
       <div style="flex:1">
-        <div style="font-weight:700;color:#C9AEFF;font-size:13.5px">Verify your account</div>
+        <div style="font-weight:700;color:#8FE3EC;font-size:13.5px">Verify your account</div>
         <div style="color:rgba(255,255,255,.45);font-size:12.5px;margin-top:2px">Complete KYC to unlock full features and payouts.</div>
       </div>
-      <div style="color:#C9AEFF;font-size:13px;font-weight:700">Verify →</div>
+      <div style="color:#8FE3EC;font-size:13px;font-weight:700">Verify →</div>
     </div>`
   :kycStatus==='pending'?`
     <div style="background:rgba(224,161,46,.1);border:1px solid rgba(224,161,46,.25);border-radius:13px;padding:14px 20px;margin-bottom:18px;font-size:13px;color:#E0A12E;display:flex;align-items:center;gap:10px">
@@ -497,7 +497,7 @@ async function renderTransactions(el){
 
   if(!transactions.length){
     el.innerHTML=`
-      <div class="empty"><strong>No transactions yet</strong>Open <a href="/checkout" style="color:#C9AEFF;font-weight:600">/checkout</a> and complete a test payment to see it here.</div>`;
+      <div class="empty"><strong>No transactions yet</strong>Open <a href="/checkout" style="color:#8FE3EC;font-weight:600">/checkout</a> and complete a test payment to see it here.</div>`;
     return;
   }
 
@@ -552,7 +552,7 @@ async function renderTransactions(el){
     </div>
 
     <div id="clearModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center;padding:20px">
-      <div style="background:#1C1335;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:32px 24px;max-width:360px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.5)">
+      <div style="background:#0A1F26;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:32px 24px;max-width:360px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.5)">
         <div style="width:48px;height:48px;border-radius:50%;background:rgba(239,106,76,.15);border:1.5px solid rgba(239,106,76,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#EF6A4C" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         </div>
@@ -640,10 +640,10 @@ async function renderPaymentLinks(el){
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Description <span style="opacity:.5">(optional)</span></label>
           <input type="text" id="plDesc" placeholder="e.g. Invoice #001, Product name…" style="${ipt}">
         </div>
-        <div id="plResult" style="display:none;background:rgba(91,44,143,.12);border:1px solid rgba(91,44,143,.35);border-radius:10px;padding:12px 14px">
+        <div id="plResult" style="display:none;background:rgba(12,110,119,.12);border:1px solid rgba(12,110,119,.35);border-radius:10px;padding:12px 14px">
           <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Payment link generated</div>
           <div style="display:flex;align-items:center;gap:8px">
-            <code id="plUrl" style="flex:1;font-size:12px;word-break:break-all;color:#C9AEFF"></code>
+            <code id="plUrl" style="flex:1;font-size:12px;word-break:break-all;color:#8FE3EC"></code>
             <button class="btn sm" id="plCopy">Copy</button>
           </div>
         </div>
@@ -908,10 +908,10 @@ async function renderApiKeys(el){
   const hasWebsite=!!M.websiteUrl;
 
   el.innerHTML=`
-    ${!hasWebsite?`<div style="background:rgba(201,174,255,.08);border:1px solid rgba(201,174,255,.2);border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:flex-start;gap:12px">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C9AEFF" stroke-width="2" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    ${!hasWebsite?`<div style="background:rgba(143,227,236,.08);border:1px solid rgba(143,227,236,.2);border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:flex-start;gap:12px">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#8FE3EC" stroke-width="2" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
       <div>
-        <div style="font-size:13px;font-weight:700;color:#C9AEFF;margin-bottom:3px">Website required to access API keys</div>
+        <div style="font-size:13px;font-weight:700;color:#8FE3EC;margin-bottom:3px">Website required to access API keys</div>
         <div style="font-size:12.5px;color:var(--muted);line-height:1.5">Enter and save your website URL below to unlock your public and secret keys.</div>
       </div>
     </div>`:''}
@@ -1183,9 +1183,9 @@ async function renderVerification(el){
         const placeholder=document.getElementById(`up-placeholder-${key}`);
 
         const markDone=()=>{
-          zone.style.borderColor='rgba(91,44,143,.55)';
-          zone.style.background='rgba(91,44,143,.08)';
-          if(camBtn)camBtn.style.background='rgba(91,44,143,.15)';
+          zone.style.borderColor='rgba(12,110,119,.55)';
+          zone.style.background='rgba(12,110,119,.08)';
+          if(camBtn)camBtn.style.background='rgba(12,110,119,.15)';
         };
 
         const loadFile=file=>{
@@ -1201,7 +1201,7 @@ async function renderVerification(el){
             preview.style.display='block';
             placeholder.style.display='none';
             preview.innerHTML=isPdf
-              ?`<div style="padding:10px;font-size:12px;color:#C9AEFF">📄 ${esc(file.name)}</div>`
+              ?`<div style="padding:10px;font-size:12px;color:#8FE3EC">📄 ${esc(file.name)}</div>`
               :`<img src="${ev.target.result}" style="max-height:90px;max-width:100%;border-radius:7px;object-fit:contain"><div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:5px">${esc(file.name)}</div>`;
             if(kycFiles[key]) markDone();
           };
@@ -1211,7 +1211,7 @@ async function renderVerification(el){
         input.addEventListener('change',()=>loadFile(input.files[0]));
         camInput.addEventListener('change',()=>loadFile(camInput.files[0]));
         if(isMobileDevice&&camBtn){camBtn.style.display='flex';camBtn.addEventListener('click',()=>camInput.click());}
-        zone.addEventListener('dragover',e=>{e.preventDefault();zone.style.borderColor='rgba(139,92,246,.6)';});
+        zone.addEventListener('dragover',e=>{e.preventDefault();zone.style.borderColor='rgba(63,199,212,.6)';});
         zone.addEventListener('dragleave',()=>zone.style.borderColor='');
         zone.addEventListener('drop',e=>{e.preventDefault();zone.style.borderColor='';const f=e.dataTransfer.files[0];if(f)loadFile(f);});
 
@@ -1220,7 +1220,7 @@ async function renderVerification(el){
           preview.style.display='block';placeholder.style.display='none';
           const isPdf=kycFiles[key].startsWith('data:application/pdf');
           preview.innerHTML=isPdf
-            ?`<div style="padding:10px;font-size:12px;color:#C9AEFF">📄 File uploaded</div>`
+            ?`<div style="padding:10px;font-size:12px;color:#8FE3EC">📄 File uploaded</div>`
             :`<img src="${kycFiles[key]}" style="max-height:90px;max-width:100%;border-radius:7px;object-fit:contain">`;
           markDone();
         }
@@ -1307,8 +1307,8 @@ function initTilt(container){
       const x=((e.clientX-r.left)/r.width-.5)*2;
       const y=((e.clientY-r.top)/r.height-.5)*2;
       card.style.transform=`perspective(500px) rotateX(${-y*11}deg) rotateY(${x*11}deg) translateZ(10px) scale(1.02)`;
-      card.style.borderColor=`rgba(91,44,143,${.3+Math.abs(x+y)*.15})`;
-      card.style.boxShadow=`${-x*10}px ${-y*10}px 35px rgba(91,44,143,.3), 0 22px 55px rgba(0,0,0,.5)`;
+      card.style.borderColor=`rgba(12,110,119,${.3+Math.abs(x+y)*.15})`;
+      card.style.boxShadow=`${-x*10}px ${-y*10}px 35px rgba(12,110,119,.3), 0 22px 55px rgba(0,0,0,.5)`;
     });
     card.addEventListener('mouseleave',()=>{
       card.style.transition='transform .5s cubic-bezier(.2,.8,.2,1), box-shadow .5s, border-color .3s';
