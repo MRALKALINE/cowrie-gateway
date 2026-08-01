@@ -11,7 +11,7 @@ const { toGhsMinor } = fx;
 const {
   merchantId, apiKey, genId, hashPassword, verifyPassword, signToken, verifyToken,
 } = require('../lib/util');
-const { findAdmin } = require('../lib/admins');
+const { findAdmin, setPassword, listAdmins, removeAdmin } = require('../lib/admins');
 const cloudinary = require('../lib/cloudinary');
 
 const router = express.Router();
@@ -442,17 +442,45 @@ function requireAdminAuth(req, res, next) {
   next();
 }
 
-router.post('/admin/auth/login', authLimiter, (req, res, next) => {
-  try {
-    const { email, password } = req.body || {};
-    const account = findAdmin(email, password);
-    if (!account) {
-      const e = new Error('Invalid admin credentials.'); e.status = 401; throw e;
-    }
-    const token = signToken({ sub: 'admin', email: account.email, role: 'admin', exp: Date.now() + cfg.TOKEN_TTL_MS });
-    res.json({ token, admin: { email: account.email, role: 'admin' } });
-  } catch (e) { next(e); }
-});
+router.post('/admin/auth/login', authLimiter, ah(async (req, res) => {
+  const { email, password } = req.body || {};
+  const account = await findAdmin(email, password);
+  if (!account) {
+    const e = new Error('Invalid admin credentials.'); e.status = 401; throw e;
+  }
+  const token = signToken({ sub: 'admin', email: account.email, role: 'admin', exp: Date.now() + cfg.TOKEN_TTL_MS });
+  res.json({ token, admin: { email: account.email, role: 'admin' } });
+}));
+
+/* Admin account management — lets the compromised credentials that used to be
+   hardcoded actually be rotated, rather than only removed from source. */
+router.get('/admin/admins', requireAdminAuth, ah(async (req, res) => {
+  res.json({ admins: await listAdmins() });
+}));
+
+router.put('/admin/password', requireAdminAuth, ah(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!(await findAdmin(req.adminEmail, currentPassword))) {
+    const e = new Error('Current password is incorrect.'); e.status = 401; throw e;
+  }
+  await setPassword(req.adminEmail, newPassword);
+  res.json({ ok: true });
+}));
+
+router.post('/admin/admins', requireAdminAuth, ah(async (req, res) => {
+  const { email, password } = req.body || {};
+  await setPassword(email, password);
+  res.status(201).json({ ok: true, email: String(email).trim().toLowerCase() });
+}));
+
+router.delete('/admin/admins/:email', requireAdminAuth, ah(async (req, res) => {
+  const target = String(req.params.email || '').trim().toLowerCase();
+  if (target === String(req.adminEmail || '').toLowerCase()) {
+    const e = new Error('You cannot remove your own account.'); e.status = 400; throw e;
+  }
+  await removeAdmin(target);
+  res.json({ ok: true });
+}));
 
 router.get('/admin/auth/me', requireAdminAuth, (req, res) => {
   res.json({ admin: { email: req.adminEmail, role: 'admin' } });

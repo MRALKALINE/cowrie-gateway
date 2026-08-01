@@ -6,6 +6,7 @@ const cfg = require('./lib/config');
 const api = require('./routes/api');
 const { migrate } = require('./lib/migrate');
 const { apiKey } = require('./lib/util');
+const { seedAdmins } = require('./lib/admins');
 const nalopay = require('./lib/nalopay');
 
 const app = express();
@@ -159,6 +160,7 @@ async function start() {
   enforceProductionSecurity();
   await connectWithRetry();
   await migrateMerchantKeys();
+  await seedAdmins();
   await loadGatewaySettings();
   app.listen(cfg.PORT, async () => {
     const all = await store.merchants.all();
