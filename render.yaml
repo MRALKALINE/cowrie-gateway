@@ -1,6 +1,10 @@
 databases:
+  # Paid instance — free Postgres expires 30 days after creation and is then
+  # deleted after a 14-day grace period, taking all merchant data with it.
+  # Change this value to match whatever plan is selected in the dashboard, or
+  # a blueprint sync will try to move the database back.
   - name: cowrie-db
-    plan: free
+    plan: basic-1gb
     databaseName: cowrie
     user: cowrie
 
