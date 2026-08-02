@@ -525,7 +525,13 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
   const liveSuccess = successAll.filter((c) => (c.mode || 'test') === 'live');
   const testSuccess = successAll.filter((c) => (c.mode || 'test') === 'test');
   const allPayouts = await store.payouts.all();
-  const collectedToday = liveSuccess.filter((c) => c.createdAt >= todayTs).reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
+  /* Dated by paidAt — when the money actually arrived — not createdAt. A
+     charge raised late yesterday and approved this morning is today's revenue,
+     and one raised today but never paid is nobody's. Falls back to createdAt
+     for records predating that field. */
+  const paidTodayList = liveSuccess.filter((c) => (c.paidAt || c.createdAt) >= todayTs);
+  const collectedToday = paidTodayList.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
+  const collectedTodayCount = paidTodayList.length;
   const grossCollected = liveSuccess.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
   const testCollected  = testSuccess.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
   const totalPaidOut   = allPayouts.filter((p) => p.status === 'completed').reduce((s, p) => s + p.amount, 0);
@@ -548,7 +554,7 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
   const byMethod = {};
   successAll.forEach((c) => { const m = c.method || 'unknown'; byMethod[m] = (byMethod[m] || 0) + toGhs(c.amount, c.currency); });
 
-  res.json({ overview: { collectedToday, paidOutToday, totalCollected, testCollected, merchantCount, successRate, pendingCount, last7Days, byMethod } });
+  res.json({ overview: { collectedToday, collectedTodayCount, paidOutToday, totalCollected, testCollected, merchantCount, successRate, pendingCount, last7Days, byMethod } });
 }));
 
 router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {

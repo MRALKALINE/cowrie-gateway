@@ -418,6 +418,15 @@ async function renderOverview(el){
   const collected=Math.max(0,grossCollected-completedPayouts);
   const rate=transactions.length?((success.length/transactions.length)*100).toFixed(1):'0.0';
   const pendingPayout=payouts.filter(p=>p.status==='pending').reduce((s,p)=>s+p.amount,0);
+
+  /* Revenue today. Dated by paidAt — when the money actually arrived — falling
+     back to createdAt for older records that predate that field. `transactions`
+     is already filtered to the current mode server-side, so a merchant in test
+     mode sees test figures and never a mix of the two. */
+  const dayStart=new Date(); dayStart.setHours(0,0,0,0);
+  const dayTs=dayStart.getTime();
+  const successToday=success.filter(t=>(t.paidAt||t.createdAt)>=dayTs);
+  const revenueToday=successToday.reduce((s,t)=>s+(t.amountGhs??t.amount),0);
   const kycStatus=kycRes?.kycStatus||'none';
 
   const kycBanner=kycStatus==='none'?`
@@ -457,6 +466,11 @@ async function renderOverview(el){
     ${modeBanner}
     ${kycBanner}
     <div class="kpis">
+      <div class="kpi-tile r3d" style="border-color:rgba(12,110,119,.45);box-shadow:0 0 0 1px rgba(12,110,119,.18) inset">
+        <div class="kl">Revenue today</div>
+        <div class="kv" style="color:#8FE3EC">${fmt(revenueToday,ccy)}</div>
+        <div class="ks">${successToday.length} payment${successToday.length!==1?'s':''} since midnight${MODE==='test'?' · test mode':''}</div>
+      </div>
       <div class="kpi-tile r3d">
         <div class="kl">Available balance</div>
         <div class="kv">${fmt(collected,ccy)}</div>

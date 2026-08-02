@@ -621,10 +621,10 @@ async function renderOverview(el){
 
   el.innerHTML = `
     <div class="kpis">
-      <div class="kpi r3d">
-        <div class="l">Live collected today</div>
-        <div class="v">${fmt(overview.collectedToday)}</div>
-        <div class="t ok">● Live</div>
+      <div class="kpi r3d" style="border-color:rgba(12,110,119,.45);box-shadow:0 0 0 1px rgba(12,110,119,.18) inset">
+        <div class="l">Revenue today</div>
+        <div class="v" style="color:#8FE3EC">${fmt(overview.collectedToday)}</div>
+        <div class="t ok">● Live · ${overview.collectedTodayCount||0} payment${(overview.collectedTodayCount||0)!==1?'s':''} since midnight</div>
       </div>
       <div class="kpi r3d">
         <div class="l">Registered merchants</div>
