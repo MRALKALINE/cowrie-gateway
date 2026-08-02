@@ -17,8 +17,27 @@ const cloudinary = require('../lib/cloudinary');
 const router = express.Router();
 
 /* Returns all admin recipient emails as an array (supports comma-separated ADMIN_EMAIL) */
-function adminEmails() {
-  return (process.env.ADMIN_EMAIL || cfg.ADMIN_EMAIL).split(',').map(e => e.trim()).filter(Boolean);
+/* Alert recipients. Two lists had drifted apart: who can sign in (the `admins`
+   table) and who gets notified (ADMIN_EMAIL). Adding an admin account did not
+   subscribe them to anything, so a new admin silently received no alerts.
+   Every admin account is now a recipient, with ADMIN_EMAIL still honoured for
+   addresses that should be notified without having a login.
+
+   Addresses are validated before use: one undeliverable recipient — the
+   generated admin@…​.local fallback, say — can make the provider reject the
+   whole message and take the real recipients down with it. */
+const DELIVERABLE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function adminEmails() {
+  const fromEnv = String(process.env.ADMIN_EMAIL || cfg.ADMIN_EMAIL || '').split(',');
+  let fromAccounts = [];
+  try {
+    fromAccounts = (await store.admins.all()).map((a) => a.email);
+  } catch (e) {
+    console.warn(`[alerts] Could not read admin accounts: ${e.message}`);
+  }
+  return [...new Set([...fromEnv, ...fromAccounts].map((e) => String(e || '').trim().toLowerCase()))]
+    .filter((e) => DELIVERABLE.test(e) && !e.endsWith('.local'));
 }
 
 /* ── rate limiters ── */
@@ -776,7 +795,7 @@ router.post('/charges/:reference/notify-transfer', loadCharge, ah(async (req, re
   if (charge.transferNotified) { await store.charges.update(charge); return res.json({ ok: true }); }
   charge.transferNotified = true;
   await store.charges.update(charge);
-  const toList = adminEmails();
+  const toList = await adminEmails();
   if (toList.length) {
     const merchant = await store.merchants.byId(charge.merchantId);
     sendPendingTransferAlert(toList, {
@@ -804,7 +823,7 @@ router.post('/admin/charges/:reference/mark-paid', requireAdminAuth, ah(async (r
   if (merchant) {
     webhooks.emit(merchant, 'charge.success', charge).catch(() => {});
     if ((charge.mode || 'test') === 'live') {
-      const toList = adminEmails();
+      const toList = await adminEmails();
       if (toList.length) {
         sendDepositAlert(toList, {
           reference: charge.reference,
@@ -836,7 +855,7 @@ async function emitWebhookIfTerminal(charge) {
   if (!alertsOff && charge.status === 'success' && !charge.successEmailSent && (charge.mode || 'test') === 'live') {
     charge.successEmailSent = true;
     await store.charges.update(charge);
-    const toList = adminEmails();
+    const toList = await adminEmails();
     if (toList.length) {
       sendDepositAlert(toList, {
         reference: charge.reference,
