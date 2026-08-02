@@ -253,7 +253,8 @@ input,select,textarea{font-family:inherit}
   /* The transactions search and its clear button need to wrap, not squeeze. */
   .search-row{flex-wrap:wrap}
   .search-row input{min-width:0}
-  .merchant-tag{max-width:120px;font-size:10px}
+  /* The store name now occupies the space the search box used to take. */
+  .merchant-tag{display:inline-block;max-width:130px;font-size:10.5px;padding:5px 9px;color:var(--ink-soft)}
   .menu-btn{display:flex}
   .mob-nav{display:none!important}
 
@@ -264,7 +265,6 @@ input,select,textarea{font-family:inherit}
   .topbar-in{gap:10px}
   .topbar-right{gap:6px;min-width:0}
   .brand{font-size:16px;min-width:0}
-  .merchant-tag{display:none}
   #logoutBtn{padding:6px 10px;font-size:12px}
   /* Mode moves into the drawer so the top bar fits the screen. */
   #modeWrap{display:none}
@@ -328,7 +328,7 @@ input,select,textarea{font-family:inherit}
   .table tr:has(td[colspan]){background:none;border:0;padding:0}
 }
 @media(max-width:520px){.formrow{grid-template-columns:1fr}}
-@media(max-width:420px){.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}}
+@media(max-width:420px){.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}.brand{font-size:15px}.merchant-tag{max-width:96px;font-size:10px;padding:4px 8px}}
 @media(max-width:400px){.kpis{grid-template-columns:1fr}.kpi-tile .kv{font-size:19px}}
 </style>
 </head>
