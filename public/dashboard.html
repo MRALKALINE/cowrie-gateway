@@ -69,8 +69,49 @@ input,select,textarea{font-family:inherit}
 
 /* ─── Layout ─── */
 .grid{display:grid;grid-template-columns:220px 1fr;gap:18px;padding:18px 0 60px}
-@media(max-width:860px){.grid{grid-template-columns:1fr;padding-bottom:84px}.sidebar{display:none}.wrap{padding:0 13px}.content{padding:14px;border-radius:14px}.kpis{grid-template-columns:1fr}.merchant-tag{max-width:120px;font-size:10px}}
-@media(max-width:420px){.kpi-tile .kv{font-size:22px}.table th,.table td{padding:8px 9px;font-size:12px}.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}input,select,textarea{font-size:16px!important}}
+/* ─── Mobile ───────────────────────────────────────────────────────────────
+   The sidebar used to be display:none below 860px, with a six-item bar pinned
+   to the bottom standing in for it — which left Verification and Webhooks
+   unreachable on a phone entirely. It now slides in as a drawer instead, so
+   mobile gets the same navigation as desktop. */
+.menu-btn{display:none;align-items:center;justify-content:center;width:38px;height:38px;flex-shrink:0;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:var(--ink);cursor:pointer;transition:.15s}
+.menu-btn:active{background:rgba(255,255,255,.12)}
+.nav-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:998;opacity:0;transition:opacity .2s ease;
+  backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.nav-backdrop.open{opacity:1}
+
+@media(max-width:860px){
+  .grid{grid-template-columns:1fr;padding-bottom:28px}
+  .wrap{padding:0 13px}
+  .content{padding:14px;border-radius:14px}
+  .kpis{grid-template-columns:1fr}
+  .merchant-tag{max-width:120px;font-size:10px}
+  .menu-btn{display:flex}
+  .mob-nav{display:none!important}
+
+  .sidebar{
+    display:block;position:fixed;top:0;left:0;bottom:0;width:min(80vw,290px);
+    z-index:999;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-radius:0;border:0;border-right:1px solid rgba(255,255,255,.12);
+    background:#0b1b21;padding:16px 14px calc(20px + env(safe-area-inset-bottom,0px));
+    transform:translateX(-101%);transition:transform .24s cubic-bezier(.4,0,.2,1);
+  }
+  .sidebar.open{transform:translateX(0)}
+  .nav-backdrop{display:block;pointer-events:none}
+  .nav-backdrop.open{pointer-events:auto}
+  body.nav-open{overflow:hidden}
+  .nav a{padding:12px 12px;font-size:14.5px}
+
+  /* Tables are the main thing that broke the layout on a phone: most had no
+     scroll container, so a wide row stretched the whole page sideways. */
+  .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  /* 16px stops iOS zooming the page when a field is focused. */
+  input,select,textarea{font-size:16px!important}
+  /* References and API keys are long unbroken strings. */
+  .mono,code,.keyrow input{word-break:break-all}
+}
+@media(max-width:420px){.kpi-tile .kv{font-size:22px}.table th,.table td{padding:8px 9px;font-size:12px}.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}}
 
 /* ─── Sidebar ─── */
 .sidebar{
@@ -216,6 +257,9 @@ input,select,textarea{font-family:inherit}
 <div class="app">
   <div class="topbar" id="topbar">
     <div class="wrap topbar-in">
+      <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
       <a href="/" class="brand" style="text-decoration:none;color:inherit"><span class="shell"></span>KassifyPay</a>
       <div class="topbar-right">
         <div style="position:relative;display:flex;align-items:center">
@@ -257,8 +301,10 @@ input,select,textarea{font-family:inherit}
     </div>
   </div>
 
+  <div class="nav-backdrop" id="navBackdrop"></div>
+
   <div class="wrap grid">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="side-sect">Menu</div>
       <nav class="nav">
         <a class="active" href="#" data-view="overview">
@@ -1475,6 +1521,24 @@ async function boot(){
   loadView('overview');
 }
 
+/* ─── Mobile drawer ───────────────────────────────────────────────────────
+   Below 860px the sidebar is off-canvas and the hamburger slides it in. The
+   body is locked while it is open so the page behind does not scroll. */
+const sidebarEl=document.getElementById('sidebar');
+const backdropEl=document.getElementById('navBackdrop');
+const menuBtn=document.getElementById('menuBtn');
+function setNav(open){
+  sidebarEl.classList.toggle('open',open);
+  backdropEl.classList.toggle('open',open);
+  document.body.classList.toggle('nav-open',open);
+  menuBtn.setAttribute('aria-expanded',String(open));
+}
+menuBtn.addEventListener('click',()=>setNav(!sidebarEl.classList.contains('open')));
+backdropEl.addEventListener('click',()=>setNav(false));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')setNav(false);});
+/* Reset when rotating back to a desktop width, or the drawer state lingers. */
+window.addEventListener('resize',()=>{if(window.innerWidth>860)setNav(false);});
+
 document.querySelectorAll('.nav a[data-view],.mnav').forEach(a=>{
   a.addEventListener('click',e=>{
     e.preventDefault();
@@ -1482,6 +1546,7 @@ document.querySelectorAll('.nav a[data-view],.mnav').forEach(a=>{
     document.querySelectorAll('.nav a,.mnav').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll(`[data-view="${v}"]`).forEach(x=>x.classList.add('active'));
     loadView(v);
+    setNav(false);   // close the drawer after choosing
   });
 });
 

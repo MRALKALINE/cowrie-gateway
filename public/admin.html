@@ -85,8 +85,47 @@ input,select,textarea{font-family:inherit}
 
 /* ─── Grid layout ─── */
 .grid{display:grid;grid-template-columns:214px 1fr;gap:18px;padding:18px 0 70px}
-@media(max-width:860px){.grid{grid-template-columns:1fr;padding-bottom:100px}.sidebar{display:none}.wrap{padding:0 12px}.content{padding:16px;border-radius:16px}.kpis{grid-template-columns:1fr 1fr}.merchant-tag{max-width:100px;font-size:10px}.hdr h1{font-size:22px}}
-@media(max-width:420px){.kpis{grid-template-columns:1fr}.kpi .v{font-size:22px}.table th,.table td{padding:8px 9px;font-size:12px}input,select,textarea{font-size:16px!important}.panel-head{flex-wrap:wrap;row-gap:6px}.panel-head h2{flex:1;min-width:0}.vhdr h1{font-size:20px}.hdr h1{font-size:19px}.hdr{margin-bottom:14px;padding-bottom:14px}.topbar-in{padding:9px 0}.merchant-tag{display:none}.content{padding:12px;border-radius:12px}}
+/* ─── Mobile ───────────────────────────────────────────────────────────────
+   The sidebar was hidden entirely below 860px with a cramped bottom bar in its
+   place. It now slides in as a drawer, so the full admin navigation is
+   reachable on a phone. */
+.menu-btn{display:none;align-items:center;justify-content:center;width:38px;height:38px;flex-shrink:0;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:var(--ink);cursor:pointer;transition:.15s}
+.menu-btn:active{background:rgba(255,255,255,.12)}
+.nav-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:998;opacity:0;transition:opacity .2s ease;
+  backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.nav-backdrop.open{opacity:1}
+
+@media(max-width:860px){
+  .grid{grid-template-columns:1fr;padding-bottom:28px}
+  .wrap{padding:0 12px}
+  .content{padding:16px;border-radius:16px}
+  .kpis{grid-template-columns:1fr 1fr}
+  .merchant-tag{max-width:100px;font-size:10px}
+  .hdr h1{font-size:22px}
+  .menu-btn{display:flex}
+  .mob-nav{display:none!important}
+
+  .sidebar{
+    display:block;position:fixed;top:0;left:0;bottom:0;width:min(80vw,290px);
+    z-index:999;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-radius:0;border:0;border-right:1px solid rgba(255,255,255,.12);
+    background:#0b1b21;padding:16px 14px calc(20px + env(safe-area-inset-bottom,0px));
+    transform:translateX(-101%);transition:transform .24s cubic-bezier(.4,0,.2,1);
+  }
+  .sidebar.open{transform:translateX(0)}
+  .nav-backdrop{display:block;pointer-events:none}
+  .nav-backdrop.open{pointer-events:auto}
+  body.nav-open{overflow:hidden}
+  .nav a{padding:12px 12px;font-size:14.5px}
+
+  /* None of the admin tables had a scroll container, so a wide row dragged
+     the whole page sideways on a phone. */
+  .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  input,select,textarea{font-size:16px!important}
+  .mono,code{word-break:break-all}
+}
+@media(max-width:420px){.kpis{grid-template-columns:1fr}.kpi .v{font-size:22px}.table th,.table td{padding:8px 9px;font-size:12px}.panel-head{flex-wrap:wrap;row-gap:6px}.panel-head h2{flex:1;min-width:0}.vhdr h1{font-size:20px}.hdr h1{font-size:19px}.hdr{margin-bottom:14px;padding-bottom:14px}.topbar-in{padding:9px 0}.merchant-tag{display:none}.content{padding:12px;border-radius:12px}}
 
 /* ─── Sidebar ─── */
 .sidebar{
@@ -316,6 +355,9 @@ input,select,textarea{font-family:inherit}
 <div class="app">
   <div class="topbar" id="topbar">
     <div class="wrap topbar-in">
+      <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
       <div class="brand"><span class="shell"></span>KassifyPay Admin</div>
       <div class="topbar-right">
         <span class="merchant-tag" id="merchantTag">…</span>
@@ -324,8 +366,10 @@ input,select,textarea{font-family:inherit}
     </div>
   </div>
 
+  <div class="nav-backdrop" id="navBackdrop"></div>
+
   <div class="wrap grid">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="side-title">Menu</div>
       <nav class="nav">
         <a class="active" href="#" data-view="overview">
@@ -1923,8 +1967,23 @@ document.getElementById('globalSearch').addEventListener('keydown', e=>{
   if(e.key === 'Enter') doGlobalSearch(e.target.value);
 });
 
+/* ─── Mobile drawer ──────────────────────────────────────────────────────── */
+const sidebarEl=document.getElementById('sidebar');
+const backdropEl=document.getElementById('navBackdrop');
+const menuBtn=document.getElementById('menuBtn');
+function setNav(open){
+  sidebarEl.classList.toggle('open',open);
+  backdropEl.classList.toggle('open',open);
+  document.body.classList.toggle('nav-open',open);
+  menuBtn.setAttribute('aria-expanded',String(open));
+}
+menuBtn.addEventListener('click',()=>setNav(!sidebarEl.classList.contains('open')));
+backdropEl.addEventListener('click',()=>setNav(false));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')setNav(false);});
+window.addEventListener('resize',()=>{if(window.innerWidth>860)setNav(false);});
+
 document.querySelectorAll('[data-view]').forEach(a=>{
-  a.addEventListener('click',e=>{e.preventDefault();loadView(a.dataset.view);});
+  a.addEventListener('click',e=>{e.preventDefault();loadView(a.dataset.view);setNav(false);});
 });
 document.getElementById('refreshBtn').addEventListener('click',()=>loadView(currentView));
 document.getElementById('logoutBtn').addEventListener('click',()=>{
