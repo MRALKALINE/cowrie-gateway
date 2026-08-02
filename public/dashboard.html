@@ -89,7 +89,15 @@ input,select,textarea{font-family:inherit}
   .grid{grid-template-columns:1fr;padding-bottom:28px}
   .wrap{padding:0 13px}
   .content{padding:14px;border-radius:14px}
-  .kpis{grid-template-columns:1fr}
+  /* Five tiles stacked one per row made the overview a long scroll before you
+     reached anything else. Two across fits a phone and keeps the figures
+     readable; it drops back to one only on very narrow screens. */
+  .kpis{grid-template-columns:1fr 1fr;gap:10px}
+  .kpi-tile .kv{font-size:19px;word-break:break-word}
+  .kpi-tile .ks{font-size:11px}
+  /* The transactions search and its clear button need to wrap, not squeeze. */
+  .search-row{flex-wrap:wrap}
+  .search-row input{min-width:0}
   .merchant-tag{max-width:120px;font-size:10px}
   .menu-btn{display:flex}
   .mob-nav{display:none!important}
@@ -131,7 +139,40 @@ input,select,textarea{font-family:inherit}
   /* References and API keys are long unbroken strings. */
   .mono,code,.keyrow input{word-break:break-all}
 }
-@media(max-width:420px){.kpi-tile .kv{font-size:22px}.table th,.table td{padding:8px 9px;font-size:12px}.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}}
+/* ─── Tables as cards on narrow screens ────────────────────────────────────
+   Transactions, payout history and webhook deliveries carry five and six
+   columns. Sideways scrolling through those on a phone means the amount and
+   status — the two things anyone actually opens the page for — sit off-screen.
+   Each row becomes a card instead, with the column name taken from the cell's
+   data-label. Rows without data-label keep the scrolling layout. */
+@media(max-width:640px){
+  .table{display:block;white-space:normal;overflow:visible}
+  .table thead{display:none}
+  .table tbody,.table tr,.table td{display:block;width:100%}
+  .table tr{
+    border:1px solid var(--line);border-radius:13px;margin-bottom:10px;padding:6px 13px;
+    background:rgba(255,255,255,.035);
+  }
+  .table tr:last-child{margin-bottom:0}
+  .table td{
+    border:0;padding:7px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;
+    text-align:right;
+    /* Inline styles on individual cells set nowrap, max-width and ellipsis for
+       the desktop table; in card form those truncate the value instead. */
+    white-space:normal!important;word-break:break-word;
+    max-width:none!important;overflow:visible!important;text-overflow:clip!important;
+  }
+  .table td+td{border-top:1px solid rgba(255,255,255,.05)}
+  .table td[data-label]::before{
+    content:attr(data-label);flex-shrink:0;text-align:left;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  }
+  /* The empty-state row must not be dressed up as a card. */
+  .table td[colspan]{display:block;text-align:center}
+  .table tr:has(td[colspan]){background:none;border:0;padding:0}
+}
+@media(max-width:400px){.kpis{grid-template-columns:1fr}.kpi-tile .kv{font-size:21px}}
+@media(max-width:420px){.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}}
 
 /* ─── Sidebar ─── */
 .sidebar{
@@ -686,12 +727,13 @@ async function renderTransactions(el){
 
 function txRows(list){
   if(!list.length)return`<tr><td colspan="5"><div class="empty">No results</div></td></tr>`;
+  /* data-label drives the stacked card layout below 640px — see the CSS. */
   return list.map(t=>`<tr>
-    <td style="font-family:var(--mono);font-size:12px;color:var(--ink-soft)">${esc(t.reference)}</td>
-    <td>${esc(ML[t.method]||t.method||'—')}</td>
-    <td style="font-family:var(--mono);font-weight:700">${fmt(t.amount,t.currency)}</td>
-    <td>${statusTag(t.status)}</td>
-    <td style="font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap">${fmtDate(t.createdAt)}</td>
+    <td data-label="Reference" style="font-family:var(--mono);font-size:12px;color:var(--ink-soft)">${esc(t.reference)}</td>
+    <td data-label="Method">${esc(ML[t.method]||t.method||'—')}</td>
+    <td data-label="Amount" style="font-family:var(--mono);font-weight:700">${fmt(t.amount,t.currency)}</td>
+    <td data-label="Status">${statusTag(t.status)}</td>
+    <td data-label="Date" style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${fmtDate(t.createdAt)}</td>
   </tr>`).join('');
 }
 
@@ -793,10 +835,10 @@ function plLinksTable(rows){
     const url=location.origin+'/checkout?reference='+esc(r.reference);
     const desc=(r.metadata&&r.metadata.description)||'—';
     return`<tr>
-      <td style="font-family:var(--mono);font-weight:700">${fmt(r.amount,r.currency)}</td>
-      <td style="color:var(--ink-soft)">${esc(desc)}</td>
-      <td>${statusTag(r.status)}</td>
-      <td style="font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap">${fmtDate(r.createdAt)}</td>
+      <td data-label="Amount" style="font-family:var(--mono);font-weight:700">${fmt(r.amount,r.currency)}</td>
+      <td data-label="Description" style="color:var(--ink-soft)">${esc(desc)}</td>
+      <td data-label="Status">${statusTag(r.status)}</td>
+      <td data-label="Created" style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${fmtDate(r.createdAt)}</td>
       <td><button class="btn sm" onclick="navigator.clipboard.writeText('${url.replace(/'/g,'&#39;')}').then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},2000)})">Copy</button></td>
     </tr>`;
   }).join('')}</tbody></table></div>`;
@@ -905,12 +947,12 @@ async function renderPayoutHistory(el){
         ?`${esc(p.mobileProvider||'')} · <span style="font-family:var(--mono)">${esc(p.mobileNumber||'')}</span>`
         :`${esc(p.bank||'—')} · <span style="font-family:var(--mono)">${esc(p.accountNumber||'')} (${esc(p.accountName||'')})</span>`;
       return`<tr>
-        <td style="font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap">${fmtDate(p.createdAt)}</td>
-        <td>${p.method==='mobile_money'?'Mobile money':'Bank transfer'}</td>
-        <td style="font-size:12.5px">${dest}</td>
-        <td style="font-family:var(--mono);font-weight:700">${fmt(p.amount,'GHS')}</td>
-        <td style="font-size:12px;color:var(--muted)">${esc(p.note||'—')}</td>
-        <td>${statusTag(p.status)}</td>
+        <td data-label="Date" style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${fmtDate(p.createdAt)}</td>
+        <td data-label="Method">${p.method==='mobile_money'?'Mobile money':'Bank transfer'}</td>
+        <td data-label="Destination" style="font-size:12.5px">${dest}</td>
+        <td data-label="Amount" style="font-family:var(--mono);font-weight:700">${fmt(p.amount,'GHS')}</td>
+        <td data-label="Note" style="font-size:12px;color:var(--muted)">${esc(p.note||'—')}</td>
+        <td data-label="Status">${statusTag(p.status)}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div></div>`;
@@ -935,11 +977,11 @@ async function renderWebhooks(el){
             :statusTag('failed');
       const detail=e.responseCode?esc(String(e.responseCode)):e.error?`<span style="color:var(--muted);font-size:11px">${esc(e.error)}</span>`:'—';
       return`<tr>
-        <td style="font-family:var(--mono);font-size:12px">${esc(e.type)}</td>
-        <td style="font-family:var(--mono);font-size:12px">${esc(e.chargeReference)}</td>
-        <td>${statusCell}</td>
-        <td style="font-family:var(--mono);font-size:12px">${detail}</td>
-        <td style="font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap">${fmtDate(e.createdAt)}</td>
+        <td data-label="Event" style="font-family:var(--mono);font-size:12px">${esc(e.type)}</td>
+        <td data-label="Charge" style="font-family:var(--mono);font-size:12px">${esc(e.chargeReference)}</td>
+        <td data-label="Status">${statusCell}</td>
+        <td data-label="Response" style="font-family:var(--mono);font-size:12px">${detail}</td>
+        <td data-label="Time" style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${fmtDate(e.createdAt)}</td>
       </tr>`;
     }).join('');
   }

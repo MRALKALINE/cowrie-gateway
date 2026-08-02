@@ -140,7 +140,36 @@ input,select,textarea{font-family:inherit}
   input,select,textarea{font-size:16px!important}
   .mono,code{word-break:break-all}
 }
-@media(max-width:420px){.kpis{grid-template-columns:1fr}.kpi .v{font-size:22px}.table th,.table td{padding:8px 9px;font-size:12px}.panel-head{flex-wrap:wrap;row-gap:6px}.panel-head h2{flex:1;min-width:0}.vhdr h1{font-size:20px}.hdr h1{font-size:19px}.hdr{margin-bottom:14px;padding-bottom:14px}.topbar-in{padding:9px 0}.merchant-tag{display:none}.content{padding:12px;border-radius:12px}}
+/* ─── Tables as cards on narrow screens ────────────────────────────────────
+   The admin tables run to eight columns. Scrolling sideways through those on
+   a phone puts amount and status off-screen — the two columns the page exists
+   to show. Each row becomes a card, labelled from the cell's data-label. */
+@media(max-width:640px){
+  .table{display:block;white-space:normal;overflow:visible}
+  .table thead{display:none}
+  .table tbody,.table tr,.table td{display:block;width:100%}
+  .table tr{
+    border:1px solid var(--line);border-radius:13px;margin-bottom:10px;padding:6px 13px;
+    background:rgba(255,255,255,.035);
+  }
+  .table tr:last-child{margin-bottom:0}
+  .table td{
+    border:0;padding:7px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;
+    text-align:right;
+    /* Inline styles on individual cells set nowrap, max-width and ellipsis for
+       the desktop table; in card form those truncate the value instead. */
+    white-space:normal!important;word-break:break-word;
+    max-width:none!important;overflow:visible!important;text-overflow:clip!important;
+  }
+  .table td+td{border-top:1px solid rgba(255,255,255,.05)}
+  .table td[data-label]::before{
+    content:attr(data-label);flex-shrink:0;text-align:left;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  }
+  .table td[colspan]{display:block;text-align:center}
+  .table tr:has(td[colspan]){background:none;border:0;padding:0}
+}
+@media(max-width:420px){.kpis{grid-template-columns:1fr}.kpi .v{font-size:22px}.panel-head{flex-wrap:wrap;row-gap:6px}.panel-head h2{flex:1;min-width:0}.vhdr h1{font-size:20px}.hdr h1{font-size:19px}.hdr{margin-bottom:14px;padding-bottom:14px}.topbar-in{padding:9px 0}.content{padding:12px;border-radius:12px}}
 
 /* ─── Sidebar ─── */
 .sidebar{
@@ -915,12 +944,12 @@ function txTable(rows, viewable=false){
       <th>Reference</th><th>Mode</th><th>Method</th><th>Amount</th><th>Status</th><th>Date</th>${viewable?'<th></th>':''}
     </tr></thead>
     <tbody>${rows.map(r=>`<tr>
-      <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink-soft)">${esc(r.reference||'—')}</td>
-      <td>${modeTag(r.mode||'test')}</td>
-      <td style="font-size:13px">${methodLabel(r.method)}</td>
-      <td style="font-family:var(--mono);font-weight:800">${fmt(r.amount||0,r.currency)}</td>
-      <td>${statusTag(r.status)}</td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">${fmtDate(r.createdAt)}</td>
+      <td data-label="Reference" style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink-soft)">${esc(r.reference||'—')}</td>
+      <td data-label="Mode">${modeTag(r.mode||'test')}</td>
+      <td data-label="Method" style="font-size:13px">${methodLabel(r.method)}</td>
+      <td data-label="Amount" style="font-family:var(--mono);font-weight:800">${fmt(r.amount||0,r.currency)}</td>
+      <td data-label="Status">${statusTag(r.status)}</td>
+      <td data-label="Date" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.createdAt)}</td>
       ${viewable?`<td style="text-align:right"><button class="btn sm ghost" data-ref="${esc(r.reference||'')}">View</button></td>`:''}
     </tr>`).join('')}</tbody>
   </table>`;
@@ -1046,13 +1075,13 @@ function payoutsTable(rows){
         : `<span style="font-size:12px">${esc(r.bank||'—')}<br><span style="font-family:var(--mono);font-size:11px">${esc(r.accountNumber||'')} · ${esc(r.accountName||'')}</span></span>`;
       const canComplete = r.status==='pending'||r.status==='processing';
       return `<tr>
-        <td style="font-weight:700;font-size:13px">${esc(r.merchantName||'—')}</td>
-        <td style="font-size:13px">${r.method==='mobile_money'?'Mobile money':'Bank transfer'}</td>
-        <td>${dest}</td>
-        <td style="font-family:var(--mono);font-weight:800">${fmt(r.amount||0,r.currency||'GHS')}</td>
-        <td style="font-size:12px;color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.note||'—')}</td>
-        <td>${statusTag(r.status==='completed'?'success':r.status==='pending'?'pending':'pending')}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">${fmtDate(r.createdAt)}</td>
+        <td data-label="Merchant" style="font-weight:700;font-size:13px">${esc(r.merchantName||'—')}</td>
+        <td data-label="Method" style="font-size:13px">${r.method==='mobile_money'?'Mobile money':'Bank transfer'}</td>
+        <td data-label="Payment details">${dest}</td>
+        <td data-label="Amount" style="font-family:var(--mono);font-weight:800">${fmt(r.amount||0,r.currency||'GHS')}</td>
+        <td data-label="Note" style="font-size:12px;color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.note||'—')}</td>
+        <td data-label="Status">${statusTag(r.status==='completed'?'success':r.status==='pending'?'pending':'pending')}</td>
+        <td data-label="Date" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.createdAt)}</td>
         <td style="text-align:right">${canComplete?`<button class="btn sm" data-complete="${esc(r.id)}">Mark done</button>`:'<span style="font-size:11px;color:var(--mint);font-family:var(--mono)">✓ done</span>'}</td>
       </tr>`;
     }).join('')}</tbody>
@@ -1081,11 +1110,11 @@ function settlementsTable(rows){
       <th>ID</th><th>Transactions</th><th>Amount</th><th>Status</th><th>Date</th>
     </tr></thead>
     <tbody>${rows.map(r=>`<tr>
-      <td style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--ink-soft)">${esc(r.id)}</td>
-      <td style="font-family:var(--mono);font-size:13px">${r.chargeCount} charge${r.chargeCount!==1?'s':''}</td>
-      <td style="font-family:var(--mono);font-weight:800">${fmt(r.amount||0,r.currency)}</td>
-      <td>${statusTag(r.status)}</td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">${fmtDate(r.createdAt)}</td>
+      <td data-label="ID" style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--ink-soft)">${esc(r.id)}</td>
+      <td data-label="Transactions" style="font-family:var(--mono);font-size:13px">${r.chargeCount} charge${r.chargeCount!==1?'s':''}</td>
+      <td data-label="Amount" style="font-family:var(--mono);font-weight:800">${fmt(r.amount||0,r.currency)}</td>
+      <td data-label="Status">${statusTag(r.status)}</td>
+      <td data-label="Date" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.createdAt)}</td>
     </tr>`).join('')}</tbody>
   </table>`;
 }
