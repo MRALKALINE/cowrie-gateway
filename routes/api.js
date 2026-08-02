@@ -5,7 +5,7 @@ const cfg = require('../lib/config');
 const payments = require('../lib/payments');
 const nalopay = require('../lib/nalopay');
 const webhooks = require('../lib/webhooks');
-const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert } = require('../lib/email');
+const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert } = require('../lib/email');
 const fx = require('../lib/fx');
 const { toGhsMinor } = fx;
 const {
@@ -712,6 +712,28 @@ router.post('/payouts', requireAuth, ah(async (req, res) => {
     note: String(note || '').trim(),
     status: 'pending', createdAt: Date.now(),
   });
+
+  /* A payout sits at 'pending' until an admin actions it, so nobody finds out
+     it was requested unless they happen to open the console. Notify the admins
+     as soon as it is raised. Not awaited: a mail problem must not fail the
+     request, which is already recorded. */
+  const toList = await adminEmails();
+  if (toList.length) {
+    const destination = payout.method === 'mobile_money'
+      ? [payout.mobileProvider, payout.mobileNumber].filter(Boolean).join(' · ')
+      : [payout.bank, payout.accountNumber, payout.accountName && `(${payout.accountName})`].filter(Boolean).join(' · ');
+    sendPayoutRequestAlert(toList, {
+      payoutId: payout.id,
+      amount: payout.amount,
+      currency: payout.currency || 'GHS',
+      merchantName: req.merchant.businessName,
+      method: payout.method,
+      destination,
+      note: payout.note,
+      mode: payout.mode,
+    }).catch(err => console.warn('[payout-request-alert]', err.message));
+  }
+
   res.status(201).json({ payout });
 }));
 
@@ -866,6 +888,21 @@ async function emitWebhookIfTerminal(charge) {
         payerName: charge.payerName,
         method: charge.method,
       }).catch(err => console.warn('[deposit-alert]', err.message));
+    }
+
+    /* The merchant is the one who has actually been paid, so they get their
+       own notice. Sent separately from the admin alert rather than as an extra
+       recipient: different wording, and it links to their dashboard, not the
+       admin console. Failure is logged, never allowed to affect the charge. */
+    if (merchant.email) {
+      sendMerchantDepositNotice(merchant.email, {
+        reference: charge.reference,
+        amount: charge.amount,
+        currency: charge.currency || 'GHS',
+        businessName: merchant.businessName,
+        payerName: charge.payerName,
+        method: charge.method,
+      }).catch(err => console.warn('[merchant-deposit-notice]', err.message));
     }
   }
 }
