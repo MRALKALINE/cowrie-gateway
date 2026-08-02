@@ -231,7 +231,17 @@ router.post('/auth/forgot-password', authLimiter, ah(async (req, res) => {
     const otp = String(Math.floor(100000 + Math.random() * 900000));
     const key = '__reset__' + lc;
     await store.verifications.set(key, otp, { type: 'reset', email: lc }, Date.now() + 15 * 60 * 1000);
-    await sendOtp(lc, otp, merchant.businessName);
+    /* A send failure must not change the response. Awaiting this unguarded
+       meant an email outage (a provider quota, say) turned a known address
+       into a 500 while an unknown one still returned 200 — which tells an
+       attacker exactly which addresses have accounts, defeating the identical
+       message below. The code is already stored, so a retry once mail is
+       working will deliver it. */
+    try {
+      await sendOtp(lc, otp, merchant.businessName);
+    } catch (err) {
+      console.error(`[reset] Could not send reset code to ${lc}: ${err.message}`);
+    }
   }
   // Always respond the same way to prevent email enumeration
   res.json({ message: 'If an account exists for that email, a reset code has been sent.' });
