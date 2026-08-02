@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cowrie Checkout</title>
+<title>KassifyPay Checkout</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -193,7 +193,7 @@ button{font-family:inherit;cursor:pointer}
   <div class="co-head">
     <div class="co-merch">
       <div class="av" id="avLetter">?</div>
-      <div><div class="nm" id="merchName">Loading…</div><div class="url">checkout.cowrie.africa</div></div>
+      <div><div class="nm" id="merchName">Loading…</div><div class="url">checkout.kassifypay.com</div></div>
       <button id="closeBtn" title="Cancel" style="margin-left:auto;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--muted);width:30px;height:30px;border-radius:8px;display:grid;place-items:center;transition:.15s;flex-shrink:0" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--muted)'">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
@@ -205,7 +205,7 @@ button{font-family:inherit;cursor:pointer}
   <div class="co-body" id="body"></div>
   <div class="co-foot">
     <span class="lock"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> PCI-DSS secured</span>
-    <span class="pwr"><span class="shell"></span>Cowrie</span>
+    <span class="pwr"><span class="shell"></span>KassifyPay</span>
   </div>
 </div>
 
@@ -218,7 +218,7 @@ const fmt=(minor,ccy)=>(SYMS[ccy]||(ccy+' '))+' '+(minor/100).toLocaleString('en
 const S={method:'card',step:'form',provider:'MTN',charge:null,bankDetail:null,ussdDetail:null,threeDsUrl:null,staticAccounts:[],payerName:''};
 const amount=()=>S.charge?S.charge.amount:0;
 const ccy=()=>S.charge?S.charge.currency:'GHS';
-const merchantName=()=>(S.charge&&S.charge.merchantName)||'Cowrie';
+const merchantName=()=>(S.charge&&S.charge.merchantName)||'KassifyPay';
 function getMethods(){
   const c=ccy();
   const hasStatic=S.staticAccounts&&S.staticAccounts.length>0;
@@ -637,7 +637,7 @@ function updateMerchantDisplay(){
   const av=document.getElementById('avLetter');
   if(nm)nm.textContent=name;
   if(av)av.textContent=name.charAt(0).toUpperCase();
-  document.title='Cowrie Checkout — '+name;
+  document.title='KassifyPay Checkout — '+name;
 }
 
 

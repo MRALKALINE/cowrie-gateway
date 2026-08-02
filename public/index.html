@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cowrie — Payments infrastructure for Africa & beyond</title>
+<title>KassifyPay — Payments infrastructure for Africa & beyond</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -238,7 +238,7 @@ footer{background:var(--darkbg-2);color:#A8C0C5}
 
 <!-- NAV -->
 <nav id="nav"><div class="nav-in">
-  <a href="/" class="logo"><span class="shell"></span>Cowrie</a>
+  <a href="/" class="logo"><span class="shell"></span>KassifyPay</a>
   <div class="navlinks">
     <a href="#products">Products <span class="ch">▾</span></a>
     <a href="#methods">Payments</a>
@@ -271,7 +271,7 @@ footer{background:var(--darkbg-2);color:#A8C0C5}
   </div>
   <div class="hero-visual">
     <div class="checkout" id="checkout">
-      <div class="co-head"><div class="merch">A</div><div><div class="nm">Adɔm Stores</div><div class="em">checkout.cowrie.africa</div></div></div>
+      <div class="co-head"><div class="merch">A</div><div><div class="nm">Adɔm Stores</div><div class="em">checkout.kassifypay.com</div></div></div>
       <div class="co-amt"><div class="l">Amount due</div><div class="v">₵ 250.00</div></div>
       <div class="co-methods">
         <div class="co-m sel"><span class="ic" style="background:var(--gold-tint);color:var(--gold-deep)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7h20v10H2z"/><path d="M2 11h20"/></svg></span><div>Mobile money<div class="sub">MTN · Vodafone · AirtelTigo</div></div><span class="radio"></span></div>
@@ -279,7 +279,7 @@ footer{background:var(--darkbg-2);color:#A8C0C5}
       </div>
       <div class="co-pay">
         <button class="co-btn" id="coBtn"><span class="co-spin"></span><span id="coLbl">Pay ₵ 250.00</span></button>
-        <div class="co-secure"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> Secured by Cowrie</div>
+        <div class="co-secure"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> Secured by KassifyPay</div>
       </div>
     </div>
     <div class="payout-notif">
@@ -318,7 +318,7 @@ footer{background:var(--darkbg-2);color:#A8C0C5}
     <div class="reveal">
       <span class="eyebrow">Every way your customers pay</span>
       <h2 style="font-family:var(--display);font-weight:800;font-size:clamp(26px,3.8vw,40px);line-height:1.07;letter-spacing:-.025em;margin-top:16px">Meet customers on the rails they already use.</h2>
-      <p style="color:var(--ink-soft);font-size:16.5px;margin-top:14px">From a market trader's MoMo wallet to an enterprise card, Cowrie covers the methods that actually move money on the continent.</p>
+      <p style="color:var(--ink-soft);font-size:16.5px;margin-top:14px">From a market trader's MoMo wallet to an enterprise card, KassifyPay covers the methods that actually move money on the continent.</p>
       <div class="method-chips">
         <div class="mchip"><span class="mi" style="background:var(--gold-tint);color:var(--gold-deep)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg></span>Mobile money</div>
         <div class="mchip"><span class="mi" style="background:var(--plum-tint);color:var(--plum)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>Cards</div>
@@ -357,7 +357,7 @@ footer{background:var(--darkbg-2);color:#A8C0C5}
     <div class="code">
       <div class="code-top"><span class="dot" style="background:#FF5F56"></span><span class="dot" style="background:#FFBD2E"></span><span class="dot" style="background:#27C93F"></span><span class="tab">create_charge.sh</span></div>
 <pre><span class="c"># Charge a customer via mobile money</span>
-curl https://api.cowrie.africa/v1/charges \
+curl https://api.kassifypay.com/v1/charges \
   -H <span class="s">"Authorization: Bearer sk_live_•••"</span> \
   -d <span class="n">amount</span>=<span class="p">25000</span> \
   -d <span class="n">currency</span>=<span class="s">GHS</span> \
@@ -369,7 +369,7 @@ curl https://api.cowrie.africa/v1/charges \
   <span class="n">"status"</span>: <span class="s">"pending"</span>,
   <span class="n">"reference"</span>: <span class="s">"cwr_8Kq2x…"</span>,
   <span class="n">"channel"</span>: <span class="s">"mobile_money"</span>,
-  <span class="n">"checkout_url"</span>: <span class="s">"https://pay.cowrie.africa/cwr_8Kq2x"</span>
+  <span class="n">"checkout_url"</span>: <span class="s">"https://pay.kassifypay.com/cwr_8Kq2x"</span>
 }</pre>
     </div>
   </div>
@@ -384,7 +384,7 @@ curl https://api.cowrie.africa/v1/charges \
   </div>
   <div class="dash-wrap reveal">
     <div class="dash">
-      <div class="dash-top"><a class="logo"><span class="shell"></span>Cowrie</a>
+      <div class="dash-top"><a class="logo"><span class="shell"></span>KassifyPay</a>
         <div class="dash-tabs"><span class="on">Overview</span><span>Transactions</span><span>Payouts</span><span>Settlements</span></div>
         <div class="right">GHS balance · <b style="color:var(--ink)">₵ 482,910.40</b></div>
       </div>
@@ -434,7 +434,7 @@ curl https://api.cowrie.africa/v1/charges \
 <!-- TESTIMONIAL -->
 <section class="section" style="background:var(--ivory-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><div class="wrap">
   <div class="quote reveal">
-    <div class="q">"We switched to Cowrie and our payment success rate jumped 9 points overnight. Payouts to our riders that took days now settle in minutes."</div>
+    <div class="q">"We switched to KassifyPay and our payment success rate jumped 9 points overnight. Payouts to our riders that took days now settle in minutes."</div>
     <div class="who"><div class="av">EA</div><div><div class="nm">Efua Antwi</div><div class="rl">COO, Bolt Ride · Accra</div></div></div>
   </div>
 </div></section>
@@ -453,7 +453,7 @@ curl https://api.cowrie.africa/v1/charges \
 <footer><div class="wrap">
   <div class="foot-grid">
     <div class="foot-brand">
-      <div class="logo"><span class="shell"></span>Cowrie</div>
+      <div class="logo"><span class="shell"></span>KassifyPay</div>
       <p>Payments infrastructure to collect, hold, convert and disburse money across Africa and the world.</p>
     </div>
     <div class="fcol"><h5>Products</h5><a href="#products">Collections</a><a href="#products">Payouts</a><a href="#products">Transfers</a><a href="#products">Virtual accounts</a><a href="/checkout">Checkout</a></div>
@@ -461,7 +461,7 @@ curl https://api.cowrie.africa/v1/charges \
     <div class="fcol"><h5>Company</h5><span>About</span><span>Pricing</span><span>Careers</span><span>Blog</span></div>
     <div class="fcol"><h5>Legal</h5><span>Terms</span><span>Privacy</span><span>Compliance</span><span>Licenses</span></div>
   </div>
-  <div class="foot-bot"><span>© 2026 Cowrie Technologies.</span><span>Accra · Lagos · Nairobi · London</span><a href="/admin-login" style="font-size:11px;color:rgba(255,255,255,.25);text-decoration:none;letter-spacing:.04em;font-family:var(--mono)">Admin console →</a></div>
+  <div class="foot-bot"><span>© 2026 KassifyPay Technologies.</span><span>Accra · Lagos · Nairobi · London</span><a href="/admin-login" style="font-size:11px;color:rgba(255,255,255,.25);text-decoration:none;letter-spacing:.04em;font-family:var(--mono)">Admin console →</a></div>
 </div></footer>
 
 <script>

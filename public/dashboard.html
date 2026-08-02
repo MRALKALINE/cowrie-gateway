@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cowrie — Dashboard</title>
+<title>KassifyPay — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -216,7 +216,7 @@ input,select,textarea{font-family:inherit}
 <div class="app">
   <div class="topbar" id="topbar">
     <div class="wrap topbar-in">
-      <a href="/" class="brand" style="text-decoration:none;color:inherit"><span class="shell"></span>Cowrie</a>
+      <a href="/" class="brand" style="text-decoration:none;color:inherit"><span class="shell"></span>KassifyPay</a>
       <div class="topbar-right">
         <div style="position:relative;display:flex;align-items:center">
           <svg style="position:absolute;left:9px;pointer-events:none;opacity:.4" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
@@ -832,7 +832,7 @@ async function renderPayoutHistory(el){
 /* ─── Webhook Deliveries ─── */
 async function renderWebhooks(el){
   const {events}=await API.get('/api/events');
-  if(!events.length){el.innerHTML=`<div class="empty"><strong>No webhook events yet</strong>Events appear here once a payment completes and Cowrie delivers it to your endpoint.</div>`;return;}
+  if(!events.length){el.innerHTML=`<div class="empty"><strong>No webhook events yet</strong>Events appear here once a payment completes and KassifyPay delivers it to your endpoint.</div>`;return;}
 
   const PAGE=10;
   let page=0;
@@ -965,10 +965,10 @@ async function renderApiKeys(el){
         <div class="field">
           <div class="lbl">Webhook URL</div>
           <div class="keyrow">
-            <input id="webhookUrl" placeholder="https://yourapp.com/webhooks/cowrie" value="${M.webhookUrl?esc(M.webhookUrl):''}">
+            <input id="webhookUrl" placeholder="https://yourapp.com/webhooks/kassifypay" value="${M.webhookUrl?esc(M.webhookUrl):''}">
             <button class="btn primary sm" id="saveWebhook">Save</button>
           </div>
-          <div class="mono-note">Cowrie will POST signed events to this URL when a payment completes.</div>
+          <div class="mono-note">KassifyPay will POST signed events to this URL when a payment completes.</div>
         </div>
         <div class="field">
           <div class="lbl">Webhook secret</div>
@@ -1063,7 +1063,7 @@ async function renderVerification(el){
         <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
       </div>
       <h2 style="font-size:20px;font-weight:800;color:var(--ink)">Account verified</h2>
-      <p style="color:var(--muted);margin-top:8px;font-size:14px">Your business has been verified. You have full access to all Cowrie features.</p>
+      <p style="color:var(--muted);margin-top:8px;font-size:14px">Your business has been verified. You have full access to all KassifyPay features.</p>
     </div>`;
     return;
   }

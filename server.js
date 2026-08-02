@@ -165,7 +165,7 @@ async function start() {
   app.listen(cfg.PORT, async () => {
     const all = await store.merchants.all();
     const demo = all.filter((m) => m.demo);
-    console.log('\n  Cowrie gateway running');
+    console.log('\n  KassifyPay gateway running');
     console.log(`  -> http://localhost:${cfg.PORT}`);
     console.log(`  Nalopay: ${nalopay.configured() ? 'configured' : 'NOT CONFIGURED — payments will fail'}`);
     if (demo.length) {

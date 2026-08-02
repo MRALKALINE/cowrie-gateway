@@ -1,6 +1,6 @@
-# Cowrie — a fully functional demo payment gateway
+# KassifyPay — a fully functional demo payment gateway
 
-A small but real payment-gateway backend (Node/Express) that links the Cowrie
+A small but real payment-gateway backend (Node/Express) that links the KassifyPay
 front-end pages — **landing → login → checkout → dashboard** — and makes the
 gateway actually work end to end.
 
@@ -74,7 +74,7 @@ All JSON. Amounts are in **minor units** (e.g. `25000` = GHS 250.00).
 - `GET  /api/demo/public-key` — test-mode convenience used by `/checkout`
 
 ### Webhooks
-On `charge.success` / `charge.failed`, Cowrie POSTs a JSON event to the
+On `charge.success` / `charge.failed`, KassifyPay POSTs a JSON event to the
 merchant's `webhook_url` with header `cowrie-signature` =
 `HMAC_SHA256(rawBody, webhook_secret)`. Verify it before trusting the payload.
 

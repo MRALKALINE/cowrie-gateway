@@ -426,7 +426,7 @@ router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.charge.merchantId);
   res.json({ charge: {
     ...req.charge,
-    merchantName:    merchant ? merchant.businessName : 'Cowrie',
+    merchantName:    merchant ? merchant.businessName : 'KassifyPay',
     merchantWebsite: merchant ? (merchant.websiteUrl || null) : null,
   }});
 }));
@@ -937,7 +937,7 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
   if (payerName && String(payerName).trim()) { charge.payerName = String(payerName).trim(); }
 
   /* Nalopay treats `reference` as the idempotency key, so each attempt needs
-     a fresh one. Keep it SHORT and in Cowrie's native cwr_ format — Nalopay
+     a fresh one. Keep it SHORT and in KassifyPay's native cwr_ format — Nalopay
      rejects long / underscore-heavy references, and a merchant's own
      charge.reference can be long (e.g. an integrator's cgw_… id). We map the
      attempt back to the charge via nalopayOrderId + cowrie_reference metadata. */
@@ -956,7 +956,7 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
       amountMinor: charge.amount,
       reference: attemptRef,
       callbackUrl: nalopayCallbackUrl(req),
-      description: `Cowrie ${charge.reference}`,
+      description: `KassifyPay ${charge.reference}`,
       extraData: { cowrie_reference: charge.reference },
     });
     console.log('[Nalopay /collection]', JSON.stringify({ ok: !!data.success, code: data.code, status: data.data && data.data.status, http: data.httpStatus }));

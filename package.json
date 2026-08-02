@@ -1,7 +1,7 @@
 {
-  "name": "cowrie-gateway",
+  "name": "kassifypay-gateway",
   "version": "1.0.0",
-  "description": "Cowrie - a fully functional demo payment gateway (Node/Express).",
+  "description": "KassifyPay - a fully functional demo payment gateway (Node/Express).",
   "type": "commonjs",
   "private": true,
   "main": "server.js",
