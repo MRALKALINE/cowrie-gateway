@@ -100,76 +100,13 @@ input,select,textarea{font-family:inherit}
   backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
 .nav-backdrop.open{opacity:1}
 
-@media(max-width:860px){
-  .grid{grid-template-columns:1fr;padding-bottom:28px}
-  .wrap{padding:0 12px}
-  .content{padding:16px;border-radius:16px}
-  .kpis{grid-template-columns:1fr 1fr}
-  .merchant-tag{max-width:100px;font-size:10px}
-  .hdr h1{font-size:22px}
-  .menu-btn{display:flex}
-  .mob-nav{display:none!important}
 
-  /* "KassifyPay Admin" plus the merchant tag pushed this row past the screen
-     width, which expands the layout viewport and shrinks the whole page. */
-  .topbar-in{gap:10px}
-  .topbar-right{gap:6px;min-width:0}
-  .brand{font-size:16px;min-width:0}
-  .merchant-tag{display:none}
-  #logoutBtn{padding:6px 10px;font-size:12px}
-
-  .panel-head h2{font-size:15px}
-  .kpi{padding:14px}
-
-  .sidebar{
-    display:block;position:fixed;top:0;left:0;bottom:0;width:min(80vw,290px);
-    z-index:999;overflow-y:auto;-webkit-overflow-scrolling:touch;
-    border-radius:0;border:0;border-right:1px solid rgba(255,255,255,.12);
-    background:#0b1b21;padding:16px 14px calc(20px + env(safe-area-inset-bottom,0px));
-    transform:translateX(-101%);transition:transform .24s cubic-bezier(.4,0,.2,1);
-  }
-  .sidebar.open{transform:translateX(0)}
-  .nav-backdrop{display:block;pointer-events:none}
-  .nav-backdrop.open{pointer-events:auto}
-  body.nav-open{overflow:hidden}
-  .nav a{padding:12px 12px;font-size:14.5px}
-
-  /* None of the admin tables had a scroll container, so a wide row dragged
-     the whole page sideways on a phone. */
-  .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
-  input,select,textarea{font-size:16px!important}
-  .mono,code{word-break:break-all}
-}
 /* ─── Tables as cards on narrow screens ────────────────────────────────────
    The admin tables run to eight columns. Scrolling sideways through those on
    a phone puts amount and status off-screen — the two columns the page exists
    to show. Each row becomes a card, labelled from the cell's data-label. */
-@media(max-width:640px){
-  .table{display:block;white-space:normal;overflow:visible}
-  .table thead{display:none}
-  .table tbody,.table tr,.table td{display:block;width:100%}
-  .table tr{
-    border:1px solid var(--line);border-radius:13px;margin-bottom:10px;padding:6px 13px;
-    background:rgba(255,255,255,.035);
-  }
-  .table tr:last-child{margin-bottom:0}
-  .table td{
-    border:0;padding:7px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;
-    text-align:right;
-    /* Inline styles on individual cells set nowrap, max-width and ellipsis for
-       the desktop table; in card form those truncate the value instead. */
-    white-space:normal!important;word-break:break-word;
-    max-width:none!important;overflow:visible!important;text-overflow:clip!important;
-  }
-  .table td+td{border-top:1px solid rgba(255,255,255,.05)}
-  .table td[data-label]::before{
-    content:attr(data-label);flex-shrink:0;text-align:left;
-    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
-  }
-  .table td[colspan]{display:block;text-align:center}
-  .table tr:has(td[colspan]){background:none;border:0;padding:0}
-}
-@media(max-width:420px){.kpis{grid-template-columns:1fr}.kpi .v{font-size:22px}.panel-head{flex-wrap:wrap;row-gap:6px}.panel-head h2{flex:1;min-width:0}.vhdr h1{font-size:20px}.hdr h1{font-size:19px}.hdr{margin-bottom:14px;padding-bottom:14px}.topbar-in{padding:9px 0}.content{padding:12px;border-radius:12px}}
+
+
 
 /* ─── Sidebar ─── */
 .sidebar{
@@ -206,7 +143,7 @@ input,select,textarea{font-family:inherit}
 
 /* ─── KPI cards ─── */
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
-@media(max-width:860px){.kpis{grid-template-columns:1fr 1fr}}
+
 .kpi{
   border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:18px 20px;
   background:rgba(255,255,255,.05);
@@ -288,7 +225,7 @@ input,select,textarea{font-family:inherit}
 
 /* ─── New payment ─── */
 .np-wrap{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-@media(max-width:640px){.np-wrap{grid-template-columns:1fr}}
+
 .np-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(255,255,255,.03)}
 .np-card-head{padding:13px 16px;background:rgba(255,255,255,.04);border-bottom:1px solid var(--line);font-family:var(--display);font-weight:800;font-size:14px}
 .np-card-body{padding:18px}
@@ -306,7 +243,7 @@ input,select,textarea{font-family:inherit}
 .field input:focus,.field select:focus{border-color:rgba(12,110,119,.55);box-shadow:0 0 0 3px rgba(12,110,119,.15)}
 .field input::placeholder{color:var(--faint)}
 .formrow{display:grid;grid-template-columns:1fr 1fr;gap:11px}
-@media(max-width:480px){.formrow{grid-template-columns:1fr}}
+
 
 /* ─── Method breakdown ─── */
 .method-bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
@@ -367,10 +304,7 @@ input,select,textarea{font-family:inherit}
 /* On a phone the entry animation is a liability: a perspective + rotateX on a
    full-width panel shifts it visibly, and a panel that never gets `.in` is
    left stuck mid-transform. Fade only below 860px. */
-@media(max-width:860px){
-  .r3d{transform:none;opacity:0}
-  .r3d.in{transform:none;opacity:1}
-}
+
 .r3d.in{
   transform:perspective(900px) rotateX(0deg) translateY(0px) scale(1);
   opacity:1;
@@ -384,12 +318,96 @@ input,select,textarea{font-family:inherit}
 .mob-nav a.active{color:#8FE3EC}
 .mob-nav a svg{opacity:.45;transition:.15s}
 .mob-nav a.active svg{opacity:1}
-@media(max-width:860px){.mob-nav{display:block}}
+
 
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
   .r3d,.r3d.in{transform:none;opacity:1}
 }
+
+/* ─── Responsive overrides ────────────────────────────────────────────────
+   Kept last on purpose: these override component rules defined above, and
+   equal-specificity conflicts in CSS are decided by source order. Moving
+   them earlier silently re-breaks the mobile layout. */
+@media(max-width:860px){
+  .grid{grid-template-columns:1fr;padding-bottom:28px}
+  .wrap{padding:0 12px}
+  .content{padding:16px;border-radius:16px}
+  .kpis{grid-template-columns:1fr 1fr}
+  .merchant-tag{max-width:100px;font-size:10px}
+  .hdr h1{font-size:22px}
+  .menu-btn{display:flex}
+  .mob-nav{display:none!important}
+
+  /* "KassifyPay Admin" plus the merchant tag pushed this row past the screen
+     width, which expands the layout viewport and shrinks the whole page. */
+  .topbar-in{gap:10px}
+  .topbar-right{gap:6px;min-width:0}
+  .brand{font-size:16px;min-width:0}
+  .merchant-tag{display:none}
+  #logoutBtn{padding:6px 10px;font-size:12px}
+
+  .panel-head h2{font-size:15px}
+  .kpi{padding:14px}
+  /* Balances run to five or six digits plus a currency prefix; the desktop
+     size overflowed a half-width tile. */
+  .kpi .v{font-size:18px;line-height:1.25;word-break:break-word}
+  .kpi .l{font-size:11.5px}
+  .kpi .t{font-size:10.5px}
+
+  .sidebar{
+    display:block;position:fixed;top:0;left:0;bottom:0;width:min(80vw,290px);
+    z-index:999;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-radius:0;border:0;border-right:1px solid rgba(255,255,255,.12);
+    background:#0b1b21;padding:16px 14px calc(20px + env(safe-area-inset-bottom,0px));
+    transform:translateX(-101%);transition:transform .24s cubic-bezier(.4,0,.2,1);
+  }
+  .sidebar.open{transform:translateX(0)}
+  .nav-backdrop{display:block;pointer-events:none}
+  .nav-backdrop.open{pointer-events:auto}
+  body.nav-open{overflow:hidden}
+  .nav a{padding:12px 12px;font-size:14.5px}
+
+  /* None of the admin tables had a scroll container, so a wide row dragged
+     the whole page sideways on a phone. */
+  .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  input,select,textarea{font-size:16px!important}
+  .mono,code{word-break:break-all}
+}
+@media(max-width:860px){.kpis{grid-template-columns:1fr 1fr}}
+@media(max-width:860px){
+  .r3d{transform:none;opacity:0}
+  .r3d.in{transform:none;opacity:1}
+}
+@media(max-width:860px){.mob-nav{display:block}}
+@media(max-width:640px){
+  .table{display:block;white-space:normal;overflow:visible}
+  .table thead{display:none}
+  .table tbody,.table tr,.table td{display:block;width:100%}
+  .table tr{
+    border:1px solid var(--line);border-radius:13px;margin-bottom:10px;padding:6px 13px;
+    background:rgba(255,255,255,.035);
+  }
+  .table tr:last-child{margin-bottom:0}
+  .table td{
+    border:0;padding:7px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;
+    text-align:right;
+    /* Inline styles on individual cells set nowrap, max-width and ellipsis for
+       the desktop table; in card form those truncate the value instead. */
+    white-space:normal!important;word-break:break-word;
+    max-width:none!important;overflow:visible!important;text-overflow:clip!important;
+  }
+  .table td+td{border-top:1px solid rgba(255,255,255,.05)}
+  .table td[data-label]::before{
+    content:attr(data-label);flex-shrink:0;text-align:left;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  }
+  .table td[colspan]{display:block;text-align:center}
+  .table tr:has(td[colspan]){background:none;border:0;padding:0}
+}
+@media(max-width:640px){.np-wrap{grid-template-columns:1fr}}
+@media(max-width:480px){.formrow{grid-template-columns:1fr}}
+@media(max-width:420px){.kpis{grid-template-columns:1fr}.kpi .v{font-size:20px}.panel-head{flex-wrap:wrap;row-gap:6px}.panel-head h2{flex:1;min-width:0}.vhdr h1{font-size:20px}.hdr h1{font-size:19px}.hdr{margin-bottom:14px;padding-bottom:14px}.topbar-in{padding:9px 0}.content{padding:12px;border-radius:12px}}
 </style>
 </head>
 <body>

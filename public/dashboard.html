@@ -85,94 +85,12 @@ input,select,textarea{font-family:inherit}
   backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
 .nav-backdrop.open{opacity:1}
 
-@media(max-width:860px){
-  .grid{grid-template-columns:1fr;padding-bottom:28px}
-  .wrap{padding:0 13px}
-  .content{padding:14px;border-radius:14px}
-  /* Five tiles stacked one per row made the overview a long scroll before you
-     reached anything else. Two across fits a phone and keeps the figures
-     readable; it drops back to one only on very narrow screens. */
-  .kpis{grid-template-columns:1fr 1fr;gap:10px}
-  .kpi-tile .kv{font-size:19px;word-break:break-word}
-  .kpi-tile .ks{font-size:11px}
-  /* The transactions search and its clear button need to wrap, not squeeze. */
-  .search-row{flex-wrap:wrap}
-  .search-row input{min-width:0}
-  .merchant-tag{max-width:120px;font-size:10px}
-  .menu-btn{display:flex}
-  .mob-nav{display:none!important}
-
-  /* The top bar was the reason the whole page rendered shrunken: hamburger +
-     brand + a 170px search + a 200px merchant tag + mode switch + sign out
-     came to roughly 758px on a 360px screen. Everything past the essentials
-     is dropped here — search lives inside the Transactions view anyway. */
-  .topbar-search{display:none}
-  .topbar-in{gap:10px}
-  .topbar-right{gap:6px;min-width:0}
-  .brand{font-size:16px;min-width:0}
-  .merchant-tag{display:none}
-  #logoutBtn{padding:6px 10px;font-size:12px}
-
-  /* Readability: the desktop sizes are cramped on a phone. */
-  .panel-head h2{font-size:15px}
-  .kpi-tile{padding:14px}
-  .field .lbl{font-size:12.5px}
-
-  .sidebar{
-    display:block;position:fixed;top:0;left:0;bottom:0;width:min(80vw,290px);
-    z-index:999;overflow-y:auto;-webkit-overflow-scrolling:touch;
-    border-radius:0;border:0;border-right:1px solid rgba(255,255,255,.12);
-    background:#0b1b21;padding:16px 14px calc(20px + env(safe-area-inset-bottom,0px));
-    transform:translateX(-101%);transition:transform .24s cubic-bezier(.4,0,.2,1);
-  }
-  .sidebar.open{transform:translateX(0)}
-  .nav-backdrop{display:block;pointer-events:none}
-  .nav-backdrop.open{pointer-events:auto}
-  body.nav-open{overflow:hidden}
-  .nav a{padding:12px 12px;font-size:14.5px}
-
-  /* Tables are the main thing that broke the layout on a phone: most had no
-     scroll container, so a wide row stretched the whole page sideways. */
-  .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
-  /* 16px stops iOS zooming the page when a field is focused. */
-  input,select,textarea{font-size:16px!important}
-  /* References and API keys are long unbroken strings. */
-  .mono,code,.keyrow input{word-break:break-all}
-}
 /* ─── Tables as cards on narrow screens ────────────────────────────────────
    Transactions, payout history and webhook deliveries carry five and six
    columns. Sideways scrolling through those on a phone means the amount and
    status — the two things anyone actually opens the page for — sit off-screen.
    Each row becomes a card instead, with the column name taken from the cell's
    data-label. Rows without data-label keep the scrolling layout. */
-@media(max-width:640px){
-  .table{display:block;white-space:normal;overflow:visible}
-  .table thead{display:none}
-  .table tbody,.table tr,.table td{display:block;width:100%}
-  .table tr{
-    border:1px solid var(--line);border-radius:13px;margin-bottom:10px;padding:6px 13px;
-    background:rgba(255,255,255,.035);
-  }
-  .table tr:last-child{margin-bottom:0}
-  .table td{
-    border:0;padding:7px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;
-    text-align:right;
-    /* Inline styles on individual cells set nowrap, max-width and ellipsis for
-       the desktop table; in card form those truncate the value instead. */
-    white-space:normal!important;word-break:break-word;
-    max-width:none!important;overflow:visible!important;text-overflow:clip!important;
-  }
-  .table td+td{border-top:1px solid rgba(255,255,255,.05)}
-  .table td[data-label]::before{
-    content:attr(data-label);flex-shrink:0;text-align:left;
-    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
-  }
-  /* The empty-state row must not be dressed up as a card. */
-  .table td[colspan]{display:block;text-align:center}
-  .table tr:has(td[colspan]){background:none;border:0;padding:0}
-}
-@media(max-width:400px){.kpis{grid-template-columns:1fr}.kpi-tile .kv{font-size:21px}}
-@media(max-width:420px){.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}}
 
 /* ─── Sidebar ─── */
 .sidebar{
@@ -181,6 +99,17 @@ input,select,textarea{font-family:inherit}
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   box-shadow:0 8px 32px rgba(0,0,0,.4),0 0 0 1px rgba(12,110,119,.06) inset;
 }
+/* ─── Drawer mode switch (mobile only) ───────────────────────────────────── */
+.drawer-mode{display:none;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line-2)}
+.mode-seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.mode-seg button{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 6px;border-radius:10px;
+  border:1.5px solid var(--line);background:rgba(255,255,255,.04);color:var(--muted);
+  font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.04em;transition:.15s}
+.mode-seg button .d{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+.mode-seg button.on[data-mode="test"]{border-color:rgba(224,161,46,.5);background:rgba(224,161,46,.13);color:#E0A12E}
+.mode-seg button.on[data-mode="live"]{border-color:rgba(31,168,119,.5);background:rgba(31,168,119,.13);color:#1FA877}
+.mode-seg button.locked{opacity:.45}
+.mode-hint{font-size:11px;color:var(--muted);margin-top:7px;line-height:1.45}
 .side-sect{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;padding-left:10px}
 .nav{display:flex;flex-direction:column;gap:3px}
 .nav a{padding:9px 10px;border-radius:11px;border:1px solid transparent;color:var(--ink-soft);font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:9px;transition:.15s}
@@ -257,7 +186,6 @@ input,select,textarea{font-family:inherit}
 .field input::placeholder{color:var(--faint)}
 .field input:focus,.field select:focus{border-color:rgba(12,110,119,.55);box-shadow:0 0 0 3px rgba(12,110,119,.15)}
 .formrow{display:grid;grid-template-columns:1fr 1fr;gap:11px}
-@media(max-width:520px){.formrow{grid-template-columns:1fr}}
 
 /* ─── Method tabs (payout) ─── */
 .method-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
@@ -294,10 +222,6 @@ input,select,textarea{font-family:inherit}
 /* On a phone the entry animation is a liability: a perspective + rotateX on a
    full-width panel shifts it visibly, and a panel that never gets `.in` is
    left stuck mid-transform. Fade only below 860px. */
-@media(max-width:860px){
-  .r3d{transform:none;opacity:0}
-  .r3d.in{transform:none;opacity:1}
-}
 
 /* ─── Mobile bottom nav ─── */
 .mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(5,14,18,.96);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-top:1px solid rgba(255,255,255,.09);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -306,9 +230,107 @@ input,select,textarea{font-family:inherit}
 .mob-nav a.active{color:#8FE3EC}
 .mob-nav a svg{opacity:.45;transition:.15s}
 .mob-nav a.active svg{opacity:1}
-@media(max-width:860px){.mob-nav{display:block}}
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.r3d,.r3d.in{transform:none;opacity:1}}
+
+/* ─── Responsive overrides ────────────────────────────────────────────────
+   Kept last on purpose: these override component rules defined above, and
+   equal-specificity conflicts in CSS are decided by source order. Moving
+   them earlier silently re-breaks the mobile layout. */
+@media(max-width:860px){
+  .grid{grid-template-columns:1fr;padding-bottom:28px}
+  .wrap{padding:0 13px}
+  .content{padding:14px;border-radius:14px}
+  /* Five tiles stacked one per row made the overview a long scroll before you
+     reached anything else. Two across fits a phone and keeps the figures
+     readable; it drops back to one only on very narrow screens. */
+  .kpis{grid-template-columns:1fr 1fr;gap:10px}
+  /* Balances run to five or six digits plus a currency prefix. At the desktop
+     size they overflowed a half-width tile; these fit without truncating. */
+  .kpi-tile .kv{font-size:17px;line-height:1.25;word-break:break-word;letter-spacing:-.01em}
+  .kpi-tile .kl{font-size:11.5px}
+  .kpi-tile .ks{font-size:10.5px;line-height:1.4}
+  /* The transactions search and its clear button need to wrap, not squeeze. */
+  .search-row{flex-wrap:wrap}
+  .search-row input{min-width:0}
+  .merchant-tag{max-width:120px;font-size:10px}
+  .menu-btn{display:flex}
+  .mob-nav{display:none!important}
+
+  /* The top bar was the reason the whole page rendered shrunken: hamburger +
+     brand + a 170px search + a 200px merchant tag + mode switch + sign out
+     came to roughly 758px on a 360px screen. Everything past the essentials
+     is dropped here — search lives inside the Transactions view anyway. */
+  .topbar-search{display:none}
+  .topbar-in{gap:10px}
+  .topbar-right{gap:6px;min-width:0}
+  .brand{font-size:16px;min-width:0}
+  .merchant-tag{display:none}
+  #logoutBtn{padding:6px 10px;font-size:12px}
+  /* Mode moves into the drawer so the top bar fits the screen. */
+  #modeWrap{display:none}
+  .drawer-mode{display:block}
+
+  /* Readability: the desktop sizes are cramped on a phone. */
+  .panel-head h2{font-size:15px}
+  .kpi-tile{padding:14px}
+  .field .lbl{font-size:12.5px}
+
+  .sidebar{
+    display:block;position:fixed;top:0;left:0;bottom:0;width:min(80vw,290px);
+    z-index:999;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-radius:0;border:0;border-right:1px solid rgba(255,255,255,.12);
+    background:#0b1b21;padding:16px 14px calc(20px + env(safe-area-inset-bottom,0px));
+    transform:translateX(-101%);transition:transform .24s cubic-bezier(.4,0,.2,1);
+  }
+  .sidebar.open{transform:translateX(0)}
+  .nav-backdrop{display:block;pointer-events:none}
+  .nav-backdrop.open{pointer-events:auto}
+  body.nav-open{overflow:hidden}
+  .nav a{padding:12px 12px;font-size:14.5px}
+
+  /* Tables are the main thing that broke the layout on a phone: most had no
+     scroll container, so a wide row stretched the whole page sideways. */
+  .table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  /* 16px stops iOS zooming the page when a field is focused. */
+  input,select,textarea{font-size:16px!important}
+  /* References and API keys are long unbroken strings. */
+  .mono,code,.keyrow input{word-break:break-all}
+}
+@media(max-width:860px){
+  .r3d{transform:none;opacity:0}
+  .r3d.in{transform:none;opacity:1}
+}
+@media(max-width:860px){.mob-nav{display:block}}
+@media(max-width:640px){
+  .table{display:block;white-space:normal;overflow:visible}
+  .table thead{display:none}
+  .table tbody,.table tr,.table td{display:block;width:100%}
+  .table tr{
+    border:1px solid var(--line);border-radius:13px;margin-bottom:10px;padding:6px 13px;
+    background:rgba(255,255,255,.035);
+  }
+  .table tr:last-child{margin-bottom:0}
+  .table td{
+    border:0;padding:7px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;
+    text-align:right;
+    /* Inline styles on individual cells set nowrap, max-width and ellipsis for
+       the desktop table; in card form those truncate the value instead. */
+    white-space:normal!important;word-break:break-word;
+    max-width:none!important;overflow:visible!important;text-overflow:clip!important;
+  }
+  .table td+td{border-top:1px solid rgba(255,255,255,.05)}
+  .table td[data-label]::before{
+    content:attr(data-label);flex-shrink:0;text-align:left;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  }
+  /* The empty-state row must not be dressed up as a card. */
+  .table td[colspan]{display:block;text-align:center}
+  .table tr:has(td[colspan]){background:none;border:0;padding:0}
+}
+@media(max-width:520px){.formrow{grid-template-columns:1fr}}
+@media(max-width:420px){.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}}
+@media(max-width:400px){.kpis{grid-template-columns:1fr}.kpi-tile .kv{font-size:19px}}
 </style>
 </head>
 <body>
@@ -373,6 +395,16 @@ input,select,textarea{font-family:inherit}
 
   <div class="wrap grid">
     <aside class="sidebar" id="sidebar">
+      <!-- Mode switch, drawer copy. The top-bar control is hidden on a phone
+           to keep that row inside the screen width, so it lives here instead. -->
+      <div class="drawer-mode" id="drawerMode">
+        <div class="side-sect" style="margin-bottom:7px">Mode</div>
+        <div class="mode-seg">
+          <button type="button" data-mode="test" id="dmTest"><span class="d"></span>Test</button>
+          <button type="button" data-mode="live" id="dmLive"><span class="d"></span>Live</button>
+        </div>
+        <div class="mode-hint" id="dmHint">Simulated payments</div>
+      </div>
       <div class="side-sect">Menu</div>
       <nav class="nav">
         <a class="active" href="#" data-view="overview">
@@ -1504,6 +1536,24 @@ function applyMode(){
   const label=document.getElementById('modeLabel');
   if(dot)dot.style.background=isLive?'#1FA877':'#E0A12E';
   if(label)label.textContent=isLive?'LIVE':'TEST';
+  applyDrawerMode();
+}
+
+/* The drawer carries its own copy of the mode switch, since the top-bar one is
+   hidden on a phone. Same state, same verification rule. */
+function applyDrawerMode(){
+  const t=document.getElementById('dmTest');
+  const l=document.getElementById('dmLive');
+  const h=document.getElementById('dmHint');
+  if(!t||!l)return;
+  t.classList.toggle('on',MODE==='test');
+  l.classList.toggle('on',MODE==='live');
+  l.classList.toggle('locked',!KYC_APPROVED);
+  if(h){
+    h.textContent = !KYC_APPROVED
+      ? 'Live mode needs account verification.'
+      : (MODE==='live' ? 'Real payments are being processed.' : 'Simulated payments — no real money moves.');
+  }
 }
 
 function updateDropdownLiveState(){
@@ -1587,6 +1637,17 @@ document.getElementById('ddLive').addEventListener('click',()=>{
   }
   switchMode('live');
 });
+
+/* Drawer copies — same guard, and the drawer closes so the toast is visible. */
+document.getElementById('dmTest').addEventListener('click',()=>{setNav(false);switchMode('test');});
+document.getElementById('dmLive').addEventListener('click',()=>{
+  setNav(false);
+  if(!KYC_APPROVED){
+    showModeToast('Complete account verification before switching to Live mode.');
+    return;
+  }
+  switchMode('live');
+});
 document.addEventListener('click',e=>{
   if(modeDropOpen&&!document.getElementById('modeWrap').contains(e.target))closeModeDropdown();
 });
@@ -1603,8 +1664,10 @@ async function boot(){
     if(MODE==='live'&&!KYC_APPROVED){
       MODE='test';
       localStorage.setItem('cowrie_mode','test');
-      applyMode();
     }
+    /* Always re-apply: the drawer switch renders its locked state from
+       KYC_APPROVED, which is only known once /api/me has returned. */
+    applyMode();
     if(!KYC_APPROVED){
       const link=document.getElementById('kycNavLink');
       if(link){
