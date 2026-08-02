@@ -539,7 +539,7 @@ async function loadView(view){
     if(view==='overview')             await renderOverview(vc);
     else if(view==='transactions')    await renderTransactions(vc);
     else if(view==='payment-links')   await renderPaymentLinks(vc);
-    else if(view==='request-payout')  renderRequestPayout(vc);
+    else if(view==='request-payout')  await renderRequestPayout(vc);
     else if(view==='payout-history')  await renderPayoutHistory(vc);
     else if(view==='webhooks')        await renderWebhooks(vc);
     else if(view==='api-keys')        await renderApiKeys(vc);
@@ -870,8 +870,33 @@ function plLinksTable(rows){
 }
 
 /* ─── Request Payout ─── */
-function renderRequestPayout(el){
+async function renderRequestPayout(el){
+  /* Requesting a payout without knowing what is available meant guessing, then
+     finding out from a rejection. Same figure and formula as the overview's
+     Available balance: successful payments less payouts already completed. */
+  const [{transactions},{payouts}]=await Promise.all([
+    API.get('/api/transactions'),API.get('/api/payouts'),
+  ]);
+  const grossCollected=transactions.filter(t=>t.status==='success')
+    .reduce((s,t)=>s+(t.amountGhs??t.amount),0);
+  const paidOut=payouts.filter(p=>p.status==='completed').reduce((s,p)=>s+p.amount,0);
+  const pendingOut=payouts.filter(p=>p.status==='pending'||p.status==='processing')
+    .reduce((s,p)=>s+p.amount,0);
+  const available=Math.max(0,grossCollected-paidOut);
+
   el.innerHTML=`
+    <div class="panel r3d" style="margin-bottom:16px">
+      <div style="padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div>
+          <div class="kl" style="font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)">Available balance</div>
+          <div style="font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.02em;margin-top:4px;color:#8FE3EC">${fmt(available,'GHS')}</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:4px">
+            ${fmt(grossCollected,'GHS')} collected · ${fmt(paidOut,'GHS')} paid out${pendingOut?` · ${fmt(pendingOut,'GHS')} awaiting approval`:''}
+          </div>
+        </div>
+        <button class="btn sm" id="pyUseMax" ${available?'':'disabled'}>Request full amount</button>
+      </div>
+    </div>
     <div class="panel r3d">
       <div class="panel-head"><h2>Payout details</h2></div>
       <div style="padding:18px">
@@ -908,10 +933,7 @@ function renderRequestPayout(el){
           </div>
         </div>
 
-        <div class="formrow">
-          <div class="field"><div class="lbl">Amount (GHS)</div><input id="pyAmount" type="number" min="1" step="0.01" placeholder="e.g. 500.00"></div>
-          <div class="field"><div class="lbl">Note <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><input id="pyNote" placeholder="e.g. Weekly withdrawal"></div>
-        </div>
+        <div class="field"><div class="lbl">Amount (GHS)</div><input id="pyAmount" type="number" min="1" step="0.01" placeholder="e.g. 500.00"></div>
 
         <button class="btn primary" id="submitPayout" style="width:100%;padding:12px;border-radius:12px">Submit request</button>
         <div class="fb" id="pyFb"></div>
@@ -926,6 +948,13 @@ function renderRequestPayout(el){
     document.getElementById('tabBank').className='method-tab'+(isBank?' on':'');
     document.getElementById('tabMomo').className='method-tab'+(isBank?'':' on');
   }
+  /* Fills the amount with everything available, in major units to match
+     the input, which is what the merchant types. */
+  document.getElementById('pyUseMax').addEventListener('click',()=>{
+    const f=document.getElementById('pyAmount');
+    f.value=(available/100).toFixed(2);
+    f.focus();
+  });
   document.getElementById('tabBank').addEventListener('click',()=>setTab('bank'));
   document.getElementById('tabMomo').addEventListener('click',()=>setTab('mobile_money'));
 
@@ -942,14 +971,13 @@ function renderRequestPayout(el){
       accountName:document.getElementById('pyAccName').value.trim(),
       mobileProvider:document.getElementById('pyProvider').value,
       mobileNumber:document.getElementById('pyPhone').value.trim(),
-      note:document.getElementById('pyNote').value.trim(),
     };
     const btn=document.getElementById('submitPayout');
     btn.disabled=true;btn.textContent='Submitting…';
     try{
       await API.post('/api/payouts',body);
       fb.textContent='Payout request submitted! The admin will review and send your funds.';fb.className='fb ok';
-      ['pyBank','pyAccNum','pyAccName','pyPhone','pyAmount','pyNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+      ['pyBank','pyAccNum','pyAccName','pyPhone','pyAmount'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     }catch(err){
       fb.textContent=err.message;fb.className='fb bad';
     }finally{
