@@ -320,6 +320,13 @@ input,select,textarea{font-family:inherit}
   transform:perspective(900px) rotateX(18deg) translateY(30px) scale(.97);
   opacity:0;
 }
+/* On a phone the entry animation is a liability: a perspective + rotateX on a
+   full-width panel shifts it visibly, and a panel that never gets `.in` is
+   left stuck mid-transform. Fade only below 860px. */
+@media(max-width:860px){
+  .r3d{transform:none;opacity:0}
+  .r3d.in{transform:none;opacity:1}
+}
 .r3d.in{
   transform:perspective(900px) rotateX(0deg) translateY(0px) scale(1);
   opacity:1;
@@ -1897,6 +1904,29 @@ function reveal3d(container){
     requestAnimationFrame(() => el.classList.add('in'));
   });
 }
+
+/* reveal3d only runs when a view first loads, but several views re-render
+   their own content afterwards. Those later panels never received `.in`, so
+   they stayed at opacity:0 and mid-transform — invisible, and displaced on a
+   phone. Watching the view container catches every panel however it arrived. */
+function watchReveals(){
+  const root=document.getElementById('main');
+  if(!root||!window.MutationObserver)return;
+  new MutationObserver(muts=>{
+    const fresh=[];
+    muts.forEach(m=>m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      if(n.classList&&n.classList.contains('r3d')&&!n.classList.contains('in'))fresh.push(n);
+      if(n.querySelectorAll)n.querySelectorAll('.r3d:not(.in)').forEach(x=>fresh.push(x));
+    }));
+    if(!fresh.length)return;
+    requestAnimationFrame(()=>fresh.forEach((el,i)=>{
+      el.style.transition=`opacity .45s ${i*60}ms ease, transform .5s ${i*60}ms cubic-bezier(.2,.8,.2,1)`;
+      el.classList.add('in');
+    }));
+  }).observe(root,{childList:true,subtree:true});
+}
+watchReveals();
 
 /* Hover tilt on KPI cards */
 function initTilt(container){

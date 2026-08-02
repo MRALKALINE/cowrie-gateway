@@ -230,6 +230,13 @@ input,select,textarea{font-family:inherit}
 /* ─── 3D reveal ─── */
 .r3d{will-change:transform,opacity;transform:perspective(900px) rotateX(18deg) translateY(30px) scale(.97);opacity:0}
 .r3d.in{transform:perspective(900px) rotateX(0) translateY(0) scale(1);opacity:1}
+/* On a phone the entry animation is a liability: a perspective + rotateX on a
+   full-width panel shifts it visibly, and a panel that never gets `.in` is
+   left stuck mid-transform. Fade only below 860px. */
+@media(max-width:860px){
+  .r3d{transform:none;opacity:0}
+  .r3d.in{transform:none;opacity:1}
+}
 
 /* ─── Mobile bottom nav ─── */
 .mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(5,14,18,.96);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-top:1px solid rgba(255,255,255,.09);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -1359,6 +1366,30 @@ function reveal3d(container){
     requestAnimationFrame(()=>el.classList.add('in'));
   });
 }
+
+/* reveal3d only runs when a view first loads, but several views re-render
+   their own content afterwards — payment links, request payout and the
+   verification steps all do. Those later panels never received `.in`, so they
+   stayed at opacity:0 and mid-transform: invisible, and displaced on a phone.
+   Watching the view container catches every panel however it got there. */
+function watchReveals(){
+  const root=document.getElementById('main');
+  if(!root||!window.MutationObserver)return;
+  new MutationObserver(muts=>{
+    const fresh=[];
+    muts.forEach(m=>m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      if(n.classList&&n.classList.contains('r3d')&&!n.classList.contains('in'))fresh.push(n);
+      if(n.querySelectorAll)n.querySelectorAll('.r3d:not(.in)').forEach(x=>fresh.push(x));
+    }));
+    if(!fresh.length)return;
+    requestAnimationFrame(()=>fresh.forEach((el,i)=>{
+      el.style.transition=`opacity .45s ${i*60}ms ease, transform .5s ${i*60}ms cubic-bezier(.2,.8,.2,1)`;
+      el.classList.add('in');
+    }));
+  }).observe(root,{childList:true,subtree:true});
+}
+watchReveals();
 
 function initTilt(container){
   container.querySelectorAll('.kpi-tile').forEach(card=>{
