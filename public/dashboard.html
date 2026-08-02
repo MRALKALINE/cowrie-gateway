@@ -493,6 +493,11 @@ const VIEWS={
 };
 
 async function loadView(view){
+  /* Switching view replaces the content but not the scroll position, so
+     choosing something from the drawer while scrolled down left the new view
+     starting above the viewport — it looked like the page began part-way in.
+     'instant' rather than smooth: this is a page change, not a jump within one. */
+  window.scrollTo({top:0,left:0,behavior:'instant'});
   const main=$('#main');
   const info=VIEWS[view]||VIEWS['transactions'];
   main.innerHTML=`
@@ -1638,8 +1643,11 @@ document.querySelectorAll('.nav a[data-view],.mnav').forEach(a=>{
     const v=a.dataset.view;
     document.querySelectorAll('.nav a,.mnav').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll(`[data-view="${v}"]`).forEach(x=>x.classList.add('active'));
+    /* Close before loading: the drawer locks body scrolling while open, so a
+       scrollTo issued first would be discarded and the old position restored
+       on unlock. */
+    setNav(false);
     loadView(v);
-    setNav(false);   // close the drawer after choosing
   });
 });
 

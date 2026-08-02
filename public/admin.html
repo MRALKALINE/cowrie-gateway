@@ -672,6 +672,10 @@ let txCache = [];
 let _pendingSearch = '';
 
 async function loadView(view){
+  /* Switching view replaces the content but not the scroll position, so
+     choosing something from the drawer while scrolled down left the new view
+     starting above the viewport. */
+  window.scrollTo({top:0,left:0,behavior:'instant'});
   currentView = view;
   document.querySelectorAll('[data-view]').forEach(a=>a.classList.toggle('active',a.dataset.view===view));
   const m = VIEWS[view];
@@ -2057,7 +2061,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')setNav(false);});
 window.addEventListener('resize',()=>{if(window.innerWidth>860)setNav(false);});
 
 document.querySelectorAll('[data-view]').forEach(a=>{
-  a.addEventListener('click',e=>{e.preventDefault();loadView(a.dataset.view);setNav(false);});
+  /* Close before loading: the drawer locks body scrolling while open, so a
+     scrollTo issued first would be discarded and the old position restored. */
+  a.addEventListener('click',e=>{e.preventDefault();setNav(false);loadView(a.dataset.view);});
 });
 document.getElementById('refreshBtn').addEventListener('click',()=>loadView(currentView));
 document.getElementById('logoutBtn').addEventListener('click',()=>{
