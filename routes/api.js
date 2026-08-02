@@ -51,6 +51,13 @@ router.use(globalLimiter);
 
 const ah = (fn) => (req, res, next) => fn(req, res, next).catch(next);
 
+/* Hosted checkout link for a charge. Built from the forwarded proto/host so it
+   is correct behind Render's proxy. */
+function checkoutUrlFor(req, charge) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  return `${proto}://${req.get('host')}/checkout?reference=${encodeURIComponent(charge.reference)}`;
+}
+
 function publicMerchant(m) {
   const { passwordHash, ...rest } = m;
   return rest;
@@ -391,18 +398,28 @@ router.post('/charges/:reference/set-amount', payLimiter, loadCharge, ah(async (
 
 router.post('/charges', chargeLimiter, resolveMerchantByKey, ah(async (req, res) => {
   const mode = req.mode || 'test';
-  const idemKey = req.headers['idempotency-key'];
+  const idemKey = req.headers['idempotency-key'] || null;
+
+  /* Fast path: a repeat of a request we have already answered. */
   if (idemKey) {
-    const existing = (await store.charges.forMerchant(req.merchant.id)).find((c) => c.idempotencyKey === idemKey && (c.mode || 'test') === mode);
-    if (existing) return res.status(200).json({ charge: existing });
+    const existing = await store.charges.byIdempotencyKey(req.merchant.id, idemKey, mode);
+    if (existing) return res.status(200).json({ charge: existing, checkout_url: checkoutUrlFor(req, existing) });
   }
-  const charge = await payments.createCharge(req.merchant, req.body || {});
-  charge.mode = mode;
-  if (idemKey) charge.idempotencyKey = idemKey;
-  await store.charges.update(charge);
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-  const checkout_url = `${proto}://${req.get('host')}/checkout?reference=${charge.reference}`;
-  res.status(201).json({ charge, checkout_url });
+
+  let charge;
+  try {
+    charge = await payments.createCharge(req.merchant, { ...(req.body || {}), mode, idempotencyKey: idemKey });
+  } catch (err) {
+    /* A concurrent request with the same key won the insert. The unique index
+       is what actually guarantees idempotency — the check above only saves a
+       round trip. 23505 is unique_violation. */
+    if (idemKey && err.code === '23505') {
+      const existing = await store.charges.byIdempotencyKey(req.merchant.id, idemKey, mode);
+      if (existing) return res.status(200).json({ charge: existing, checkout_url: checkoutUrlFor(req, existing) });
+    }
+    throw err;
+  }
+  res.status(201).json({ charge, checkout_url: checkoutUrlFor(req, charge) });
 }));
 
 router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
@@ -649,7 +666,7 @@ router.post('/payouts', requireAuth, ah(async (req, res) => {
   }
   const payout = await store.payouts.insert({
     id: genId('pyt_'), merchantId: req.merchant.id,
-    amount: amt, currency: 'USD',
+    amount: amt, currency: 'GHS',
     mode: req.mode || 'test',
     method: method || 'bank',
     bank: String(bank || '').trim(),
@@ -675,7 +692,7 @@ router.post('/admin/settlements', requireAdminAuth, ah(async (req, res) => {
      version check would only add spurious conflicts. */
   await Promise.all(unsettled.map((c) => { c.settled = true; return store.charges.forceUpdate(c); }));
   const settlement = await store.settlements.insert({
-    id: genId('stl_'), merchantId: 'admin', amount, currency: 'USD',
+    id: genId('stl_'), merchantId: 'admin', amount, currency: 'GHS',
     chargeCount: unsettled.length, status: 'completed', createdAt: Date.now(),
   });
   res.status(201).json({ settlement });
@@ -689,7 +706,7 @@ router.post('/admin/new-payment', requireAdminAuth, ah(async (req, res) => {
   if (!merchant) { const e = new Error('No merchant available.'); e.status = 400; throw e; }
   const charge = await payments.createCharge(merchant, {
     amount: isOpen ? 0 : Number(amount) || 0,
-    currency: currency || 'USD',
+    currency: currency || 'GHS',
     email: String(email || '').trim(),
     openAmount: isOpen,
   });
@@ -749,7 +766,7 @@ router.post('/charges/:reference/notify-transfer', loadCharge, ah(async (req, re
     sendPendingTransferAlert(toList, {
       reference: charge.reference,
       amount: charge.amount,
-      currency: charge.currency || 'USD',
+      currency: charge.currency || 'GHS',
       merchantName: merchant ? merchant.businessName : 'Unknown',
     }).catch(err => console.warn('[transfer-alert]', err.message));
   }
@@ -776,7 +793,7 @@ router.post('/admin/charges/:reference/mark-paid', requireAdminAuth, ah(async (r
         sendDepositAlert(toList, {
           reference: charge.reference,
           amount: charge.amount,
-          currency: charge.currency || 'USD',
+          currency: charge.currency || 'GHS',
           merchantName: merchant.businessName,
           customerEmail: charge.customerEmail,
           payerName: charge.payerName,
@@ -808,7 +825,7 @@ async function emitWebhookIfTerminal(charge) {
       sendDepositAlert(toList, {
         reference: charge.reference,
         amount: charge.amount,
-        currency: charge.currency || 'USD',
+        currency: charge.currency || 'GHS',
         merchantName: merchant.businessName,
         customerEmail: charge.customerEmail,
         payerName: charge.payerName,

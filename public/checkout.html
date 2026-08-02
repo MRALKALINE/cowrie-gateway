@@ -351,8 +351,9 @@ async function submitPay(btn,method,details){
 function handleNext(next,detail){
   if(next==='success')go('success');
   else if(next==='failed')go('failed');
-  else if(next==='otp')go('otp');
-  else if(next==='pin')go('pin');
+  /* 'otp' and 'pin' were Paystack states. Nalopay has no such step — mobile
+     money is approved on the payer's handset and cards are entered on
+     Nalopay's hosted page — so these are never returned. */
   else if(next==='bank_details'){S.bankDetail=detail;go('bank');}
   else if(next==='ussd_code'){S.ussdDetail=detail;go('ussd_wait');}
   else if(next==='open_url'&&detail){S.threeDsUrl=detail;go('verify_3ds');}
@@ -394,8 +395,6 @@ function render(){
     }));
     bindForm();
   }
-  else if(S.step==='otp')renderOtp(b);
-  else if(S.step==='pin')renderPin(b);
   else if(S.step==='approve')b.innerHTML=stateApprove();
   else if(S.step==='bank')renderBankDetails(b);
   else if(S.step==='static_transfer')renderStaticTransfer(b);
@@ -408,53 +407,9 @@ function render(){
 }
 function go(step){S.step=step;render();}
 
-function renderOtp(b){
-  b.innerHTML=`<button class="back" id="back">← Back</button>
-    <div class="state">
-      <div class="ic" style="background:var(--plum-tint);color:var(--plum)"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
-      <h3>Verify it's you</h3><p>Enter the 6-digit OTP sent to the phone number linked to your card.</p>
-      <div class="otp-boxes" id="otp">${Array.from({length:6}).map((_,i)=>`<input inputmode="numeric" maxlength="1" data-i="${i}">`).join('')}</div>
-      <button class="pay" id="verify" disabled><span class="spin"></span><span class="lbl">Confirm — ${fmt(amount(),ccy())}</span></button>
-    </div>`;
-  $('#back').addEventListener('click',()=>go('form'));
-  const boxes=[...$('#otp').querySelectorAll('input')];
-  const check=()=>$('#verify').disabled=boxes.map(x=>x.value).join('').length<6;
-  boxes.forEach((bx,i)=>{
-    bx.addEventListener('input',()=>{bx.value=bx.value.replace(/\D/g,'');if(bx.value&&i<5)boxes[i+1].focus();check();});
-    bx.addEventListener('keydown',e=>{if(e.key==='Backspace'&&!bx.value&&i>0)boxes[i-1].focus();});
-  });
-  boxes[0].focus();
-  $('#verify').addEventListener('click',async()=>{
-    const v=$('#verify'),otp=boxes.map(x=>x.value).join('');
-    v.classList.add('loading');
-    try{const {charge,next,detail}=await API.post(`/api/charges/${S.charge.reference}/submit-otp`,{otp});S.charge=charge;v.classList.remove('loading');handleNext(next,detail);}
-    catch(err){v.classList.remove('loading');alert(err.message);}
-  });
-}
-
-function renderPin(b){
-  b.innerHTML=`<button class="back" id="back">← Back</button>
-    <div class="state">
-      <div class="ic" style="background:var(--plum-tint);color:var(--plum)"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
-      <h3>Enter your card PIN</h3><p>Enter your 4-digit card PIN to authorise this payment.</p>
-      <div class="otp-boxes" id="pin">${Array.from({length:4}).map((_,i)=>`<input inputmode="numeric" maxlength="1" type="password" data-i="${i}">`).join('')}</div>
-      <button class="pay" id="submitPin" disabled><span class="spin"></span><span class="lbl">Continue</span></button>
-    </div>`;
-  $('#back').addEventListener('click',()=>go('form'));
-  const boxes=[...$('#pin').querySelectorAll('input')];
-  const check=()=>$('#submitPin').disabled=boxes.map(x=>x.value).join('').length<4;
-  boxes.forEach((bx,i)=>{
-    bx.addEventListener('input',()=>{bx.value=bx.value.replace(/\D/g,'');if(bx.value&&i<3)boxes[i+1].focus();check();});
-    bx.addEventListener('keydown',e=>{if(e.key==='Backspace'&&!bx.value&&i>0)boxes[i-1].focus();});
-  });
-  boxes[0].focus();
-  $('#submitPin').addEventListener('click',async()=>{
-    const v=$('#submitPin'),pin=boxes.map(x=>x.value).join('');
-    v.classList.add('loading');
-    try{const {charge,next,detail}=await API.post(`/api/charges/${S.charge.reference}/submit-pin`,{pin});S.charge=charge;v.classList.remove('loading');handleNext(next,detail);}
-    catch(err){v.classList.remove('loading');alert(err.message);}
-  });
-}
+/* renderOtp and renderPin removed with the Paystack flow. They posted to
+   /submit-otp and /submit-pin, which no longer exist, and the PIN screen
+   collected a card PIN — not something a merchant page should ever ask for. */
 
 function renderBankDetails(b){
   const a=S.bankDetail||{};
