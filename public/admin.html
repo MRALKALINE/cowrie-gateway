@@ -739,9 +739,14 @@ async function renderOverview(el){
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi r3d" style="border-color:rgba(12,110,119,.45);box-shadow:0 0 0 1px rgba(12,110,119,.18) inset">
-        <div class="l">Revenue today</div>
-        <div class="v" style="color:#8FE3EC">${fmt(overview.collectedToday)}</div>
-        <div class="t ok">● Live · ${overview.collectedTodayCount||0} payment${(overview.collectedTodayCount||0)!==1?'s':''} since midnight</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="l">Revenue</div>
+          <select id="revPeriod" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;color:var(--ink);font-family:var(--mono);font-size:10.5px;padding:3px 6px;outline:none;max-width:118px">
+            ${PERIODS.map((p,i)=>`<option value="${i}"${i===revPeriodIdx?' selected':''}>${p.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="v" id="revValue" style="color:#8FE3EC">${fmt(revenueFor(overview.revenueByDay,revPeriodIdx).amount)}</div>
+        <div class="t ok" id="revCaption">● Live · ${revenueFor(overview.revenueByDay,revPeriodIdx).count} payment${revenueFor(overview.revenueByDay,revPeriodIdx).count!==1?'s':''}</div>
       </div>
       <div class="kpi r3d">
         <div class="l">Total revenue</div>
@@ -797,6 +802,17 @@ async function renderOverview(el){
       </div>
       <div style="overflow:auto;">${txTable(transactions.slice(0,8),true)}</div>
     </div>`;
+
+  /* Period switch recomputes from buckets already in hand — no refetch. */
+  const sel = document.getElementById('revPeriod');
+  if (sel) sel.addEventListener('change', () => {
+    revPeriodIdx = Number(sel.value) || 0;
+    localStorage.setItem('kp_rev_period', String(revPeriodIdx));
+    const r = revenueFor(overview.revenueByDay, revPeriodIdx);
+    document.getElementById('revValue').textContent = fmt(r.amount);
+    document.getElementById('revCaption').textContent =
+      `● Live · ${r.count} payment${r.count !== 1 ? 's' : ''}`;
+  });
 }
 
 function barChart(days){
@@ -1978,6 +1994,34 @@ async function renderGateways(el){
 /* ========================= 3D Effects ========================= */
 
 /* Staggered 3D entry animation for new content */
+
+/* ─── Revenue period selector ──────────────────────────────────────────────
+   Buckets arrive newest-first: index 0 is today, 1 yesterday, and so on.
+   "Yesterday" is that single day; "Last N days" is a rolling window ending
+   today, which is how the phrase is normally meant. */
+const PERIODS = [
+  { label: 'Today',        from: 0, to: 0 },
+  { label: 'Yesterday',    from: 1, to: 1 },
+  { label: 'Last 2 days',  from: 0, to: 1 },
+  { label: 'Last 3 days',  from: 0, to: 2 },
+  { label: 'Last 4 days',  from: 0, to: 3 },
+  { label: 'Last 5 days',  from: 0, to: 4 },
+  { label: 'Last 6 days',  from: 0, to: 5 },
+  { label: 'Last 7 days',  from: 0, to: 6 },
+];
+let revPeriodIdx = Number(localStorage.getItem('kp_rev_period') || 0);
+if (!PERIODS[revPeriodIdx]) revPeriodIdx = 0;
+
+function revenueFor(days, idx){
+  const p = PERIODS[idx] || PERIODS[0];
+  const slice = (days || []).slice(p.from, p.to + 1);
+  return {
+    amount: slice.reduce((s, d) => s + (d.amount || 0), 0),
+    count:  slice.reduce((s, d) => s + (d.count  || 0), 0),
+    label:  p.label,
+  };
+}
+
 function reveal3d(container){
   const items = container.querySelectorAll('.r3d');
   items.forEach((el, i) => {

@@ -570,6 +570,26 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
     last7Days.push({ date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), amount: daySucc.reduce((s, c) => s + toGhs(c.amount, c.currency), 0), count: daySucc.length });
   }
 
+  /* Daily live revenue for the period selector, newest first: index 0 is
+     today, 1 yesterday, and so on. Deliberately not reusing last7Days above —
+     that mixes live and test and dates by createdAt, while every revenue
+     figure on the dashboard is live-only and dated by paidAt. */
+  const revenueByDay = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+    const start = d.getTime(); const end = start + 86_400_000;
+    const inDay = liveSuccess.filter((c) => {
+      const at = c.paidAt || c.createdAt;
+      return at >= start && at < end;
+    });
+    revenueByDay.push({
+      date: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      amount: inDay.reduce((s, c) => s + toGhs(c.amount, c.currency), 0),
+      count: inDay.length,
+    });
+  }
+
   const byMethod = {};
   successAll.forEach((c) => { const m = c.method || 'unknown'; byMethod[m] = (byMethod[m] || 0) + toGhs(c.amount, c.currency); });
 
@@ -582,7 +602,7 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
       collectedToday, collectedTodayCount, paidOutToday,
       grossCollected, totalPaidOut, liveCount: liveSuccess.length,
       totalCollected, testCollected, merchantCount, successRate, pendingCount,
-      last7Days, byMethod,
+      last7Days, revenueByDay, byMethod,
     },
   });
 }));

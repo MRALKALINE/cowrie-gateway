@@ -552,6 +552,46 @@ async function loadView(view){
   }
 }
 
+
+/* ─── Revenue period selector ──────────────────────────────────────────────
+   Buckets are newest-first: index 0 is today, 1 yesterday, and so on.
+   "Yesterday" is that single day; "Last N days" is a rolling window ending
+   today, which is how the phrase is normally meant. */
+const PERIODS = [
+  { label: 'Today',        from: 0, to: 0 },
+  { label: 'Yesterday',    from: 1, to: 1 },
+  { label: 'Last 2 days',  from: 0, to: 1 },
+  { label: 'Last 3 days',  from: 0, to: 2 },
+  { label: 'Last 4 days',  from: 0, to: 3 },
+  { label: 'Last 5 days',  from: 0, to: 4 },
+  { label: 'Last 6 days',  from: 0, to: 5 },
+  { label: 'Last 7 days',  from: 0, to: 6 },
+];
+let revPeriodIdx = Number(localStorage.getItem('kp_rev_period') || 0);
+if (!PERIODS[revPeriodIdx]) revPeriodIdx = 0;
+
+/* Successful charges bucketed by the day they were paid, newest first. */
+function revenueBuckets(successful){
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - i);
+    const start = d.getTime(), end = start + 86400000;
+    const inDay = successful.filter(t => { const at = t.paidAt || t.createdAt; return at >= start && at < end; });
+    out.push({ amount: inDay.reduce((s,t) => s + (t.amountGhs ?? t.amount), 0), count: inDay.length });
+  }
+  return out;
+}
+
+function revenueFor(days, idx){
+  const p = PERIODS[idx] || PERIODS[0];
+  const slice = (days || []).slice(p.from, p.to + 1);
+  return {
+    amount: slice.reduce((s,d) => s + (d.amount||0), 0),
+    count:  slice.reduce((s,d) => s + (d.count ||0), 0),
+    label:  p.label,
+  };
+}
+
 /* ─── Overview ─── */
 async function renderOverview(el){
   const [{transactions},{payouts},kycRes]=await Promise.all([API.get('/api/transactions'),API.get('/api/payouts'),API.get('/api/kyc').catch(()=>null)]);
@@ -569,10 +609,7 @@ async function renderOverview(el){
      back to createdAt for older records that predate that field. `transactions`
      is already filtered to the current mode server-side, so a merchant in test
      mode sees test figures and never a mix of the two. */
-  const dayStart=new Date(); dayStart.setHours(0,0,0,0);
-  const dayTs=dayStart.getTime();
-  const successToday=success.filter(t=>(t.paidAt||t.createdAt)>=dayTs);
-  const revenueToday=successToday.reduce((s,t)=>s+(t.amountGhs??t.amount),0);
+  const buckets=revenueBuckets(success);
   const kycStatus=kycRes?.kycStatus||'none';
 
   const kycBanner=kycStatus==='none'?`
@@ -613,9 +650,14 @@ async function renderOverview(el){
     ${kycBanner}
     <div class="kpis">
       <div class="kpi-tile r3d" style="border-color:rgba(12,110,119,.45);box-shadow:0 0 0 1px rgba(12,110,119,.18) inset">
-        <div class="kl">Revenue today</div>
-        <div class="kv" style="color:#8FE3EC">${fmt(revenueToday,ccy)}</div>
-        <div class="ks">${successToday.length} payment${successToday.length!==1?'s':''} since midnight${MODE==='test'?' · test mode':''}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="kl">Revenue</div>
+          <select id="revPeriod" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;color:var(--ink);font-family:var(--mono);font-size:10.5px;padding:3px 6px;outline:none;max-width:112px">
+            ${PERIODS.map((p,i)=>`<option value="${i}"${i===revPeriodIdx?' selected':''}>${p.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="kv" id="revValue" style="color:#8FE3EC">${fmt(revenueFor(buckets,revPeriodIdx).amount,ccy)}</div>
+        <div class="ks" id="revCaption">${revenueFor(buckets,revPeriodIdx).count} payment${revenueFor(buckets,revPeriodIdx).count!==1?'s':''}${MODE==='test'?' · test mode':''}</div>
       </div>
       <div class="kpi-tile r3d">
         <div class="kl">Available balance</div>
@@ -646,6 +688,17 @@ async function renderOverview(el){
         <tbody>${txRows(transactions.slice(0,5))}</tbody>
       </table></div>
     </div>`:''}`;
+
+  /* Period switch recomputes from buckets already in hand — no refetch. */
+  const revSel=document.getElementById('revPeriod');
+  if(revSel) revSel.addEventListener('change',()=>{
+    revPeriodIdx=Number(revSel.value)||0;
+    localStorage.setItem('kp_rev_period',String(revPeriodIdx));
+    const r=revenueFor(buckets,revPeriodIdx);
+    document.getElementById('revValue').textContent=fmt(r.amount,ccy);
+    document.getElementById('revCaption').textContent=
+      `${r.count} payment${r.count!==1?'s':''}${MODE==='test'?' · test mode':''}`;
+  });
 
   const kycBtn=document.getElementById('kycBannerBtn');
   if(kycBtn) kycBtn.addEventListener('click',e=>{e.preventDefault();loadView('verification');document.querySelectorAll('.nav a,.mnav').forEach(x=>x.classList.toggle('active',x.dataset.view==='verification'));});
