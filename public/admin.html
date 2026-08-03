@@ -1253,6 +1253,10 @@ async function renderMembers(el){
         <button id="mbLockBtn" style="width:100%;min-height:46px;padding:12px 18px;border-radius:12px;font-family:var(--display);font-weight:700;font-size:14px;cursor:pointer;border:1.5px solid ${m.locked?'rgba(31,168,119,.4)':'rgba(239,106,76,.4)'};background:${m.locked?'rgba(31,168,119,.12)':'rgba(239,106,76,.12)'};color:${m.locked?'var(--mint)':'#EF6A4C'}">
           ${m.locked?'🔓 Unlock account':'🔒 Lock account'}
         </button>
+        ${m.locked&&m.lockReason?`<div style="margin-top:9px;padding:10px 12px;border-radius:10px;background:rgba(239,106,76,.1);border:1px solid rgba(239,106,76,.25)">
+          <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#EF6A4C;margin-bottom:4px">Reason given</div>
+          <div style="font-size:12.5px;color:var(--ink-soft)">${esc(m.lockReason)}</div>
+        </div>`:''}
         <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:7px;text-align:center">${m.locked?'This member cannot log in or take payments.':'Locking blocks login, dashboard access and all API/payment activity.'}</div>
       </div>
 
@@ -1272,15 +1276,26 @@ async function renderMembers(el){
     const lockBtn = document.getElementById('mbLockBtn');
     lockBtn.addEventListener('click', async ()=>{
       const goingToLock = !m.locked;
-      const ok = confirm(goingToLock
-        ? `Lock "${m.businessName}"? They will be signed out and blocked from logging in or taking payments until you unlock them.`
-        : `Unlock "${m.businessName}"? They will be able to log in and take payments again.`);
-      if(!ok) return;
+      let reason = '';
+      if (goingToLock) {
+        /* Shown to the merchant verbatim when they sign in, so it has to say
+           something. The server enforces this too. */
+        reason = (prompt(
+          `Deactivate "${m.businessName}"?
+
+The reason below is shown to them when they sign in. They will still be able to log in and read their records, but cannot take payments or request payouts.`,
+          '') || '').trim();
+        if (!reason) return;
+        if (reason.length < 5) { alert('Please give a reason of at least 5 characters.'); return; }
+      } else if (!confirm(`Reactivate "${m.businessName}"? They will be able to take payments again.`)) {
+        return;
+      }
       lockBtn.disabled = true;
-      lockBtn.textContent = goingToLock ? 'Locking…' : 'Unlocking…';
+      lockBtn.textContent = goingToLock ? 'Deactivating…' : 'Reactivating…';
       try {
-        const r = await API.post(`/api/admin/members/${encodeURIComponent(m.id)}/lock`, { locked: goingToLock });
+        const r = await API.post(`/api/admin/members/${encodeURIComponent(m.id)}/lock`, { locked: goingToLock, reason });
         m.locked = r.locked;
+        m.lockReason = r.lockReason || null;
         showDetail(m);
       } catch(e) {
         alert('Failed: ' + (e.message||'unknown error'));

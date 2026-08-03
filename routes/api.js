@@ -104,11 +104,27 @@ async function requireAuth(req, res, next) {
     const payload = token && verifyToken(token);
     const merchant = payload && await store.merchants.byId(payload.sub);
     if (!merchant) { const e = new Error('Unauthorized'); e.status = 401; return next(e); }
-    if (merchant.locked) { const e = new Error('This account has been locked. Please contact support.'); e.status = 403; return next(e); }
+    /* A deactivated merchant is deliberately let through. Refusing the session
+       outright left them with a bare error and no way to learn why, so they
+       can now sign in, see the reason and read their own records. Anything
+       that moves money is stopped by requireActive below. */
     req.merchant = merchant;
     req.mode = (req.headers['x-cowrie-mode'] === 'live') ? 'live' : 'test';
     next();
   } catch (e) { next(e); }
+}
+
+/* Blocks anything that moves money or changes settings for a deactivated
+   merchant. requireAuth now lets them in so they can read their records and
+   see why; this is what actually enforces the deactivation. */
+function requireActive(req, res, next) {
+  if (req.merchant && req.merchant.locked) {
+    const e = new Error(req.merchant.lockReason
+      ? `Your account has been deactivated: ${req.merchant.lockReason}`
+      : 'Your account has been deactivated. Please contact support.');
+    e.status = 403; return next(e);
+  }
+  next();
 }
 
 async function resolveMerchantByKey(req, res, next) {
@@ -309,9 +325,9 @@ router.post('/auth/login', authLimiter, ah(async (req, res) => {
   if (!merchant || !verifyPassword(password || '', merchant.passwordHash)) {
     const e = new Error('Invalid email or password.'); e.status = 401; throw e;
   }
-  if (merchant.locked) {
-    const e = new Error('This account has been locked. Please contact support.'); e.status = 403; throw e;
-  }
+  /* Deactivated accounts may sign in. The dashboard reads `locked` and
+     `lockReason` from the merchant below and shows why; blocking here told
+     them nothing and gave them nowhere to look. */
   const ttl = remember ? cfg.REMEMBER_TTL_MS : cfg.TOKEN_TTL_MS;
   const token = signToken({ sub: merchant.id, exp: Date.now() + ttl });
   res.json({ token, merchant: publicMerchant(merchant) });
@@ -328,7 +344,7 @@ router.get('/info', (req, res) => {
   res.json({ testMode: !nalopay.configured() || process.env.NALOPAY_TEST_MODE === 'true' });
 });
 
-router.put('/me/webhook', requireAuth, ah(async (req, res) => {
+router.put('/me/webhook', requireAuth, requireActive, ah(async (req, res) => {
   const { url } = req.body || {};
   if (url) assertWebUrl(url, 'webhook url');
   req.merchant.webhookUrl = url || null;
@@ -336,7 +352,7 @@ router.put('/me/webhook', requireAuth, ah(async (req, res) => {
   res.json({ merchant: publicMerchant(req.merchant) });
 }));
 
-router.put('/me/website', requireAuth, ah(async (req, res) => {
+router.put('/me/website', requireAuth, requireActive, ah(async (req, res) => {
   const { url } = req.body || {};
   if (url) assertWebUrl(url, 'website url');
   req.merchant.websiteUrl = url || null;
@@ -353,7 +369,7 @@ router.get('/transactions', requireAuth, ah(async (req, res) => {
   res.json({ transactions });
 }));
 
-router.delete('/transactions', requireAuth, ah(async (req, res) => {
+router.delete('/transactions', requireAuth, requireActive, ah(async (req, res) => {
   const { mode } = req.query;
   if (mode === 'live' || mode === 'test') {
     await store.charges.clearForMerchantByMode(req.merchant.id, mode);
@@ -376,7 +392,7 @@ router.get('/payment-links', requireAuth, ah(async (req, res) => {
   res.json({ links });
 }));
 
-router.post('/payment-links', requireAuth, chargeLimiter, ah(async (req, res) => {
+router.post('/payment-links', requireAuth, requireActive, chargeLimiter, ah(async (req, res) => {
   const { amount, currency, email, description, openAmount } = req.body || {};
   const isOpen = Boolean(openAmount);
   const amountMinor = isOpen ? 0 : Math.round(Number(amount) * 100);
@@ -633,6 +649,8 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
       websiteUrl: m.websiteUrl || null,
       createdAt: m.createdAt,
       locked: !!m.locked,
+      lockReason: m.lockReason || null,
+      lockedAt: m.lockedAt || null,
       demo: !!m.demo,
       liveGross,
       testGross,
@@ -658,9 +676,26 @@ router.get('/admin/members/:merchantId/transactions', requireAdminAuth, ah(async
 router.post('/admin/members/:merchantId/lock', requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
-  merchant.locked = !!(req.body && req.body.locked);
+  const locking = !!(req.body && req.body.locked);
+  if (locking) {
+    /* A reason is required: the merchant is shown it verbatim when they sign
+       in, and "your account has been deactivated" with no explanation is what
+       this change exists to stop. */
+    const reason = String((req.body && req.body.reason) || '').trim();
+    if (reason.length < 5) {
+      const e = new Error('A reason is required when deactivating an account.'); e.status = 400; throw e;
+    }
+    merchant.lockReason = reason.slice(0, 300);
+    merchant.lockedAt = Date.now();
+    merchant.lockedBy = req.adminEmail || null;
+  } else {
+    delete merchant.lockReason;
+    delete merchant.lockedAt;
+    delete merchant.lockedBy;
+  }
+  merchant.locked = locking;
   await store.merchants.update(merchant);
-  res.json({ ok: true, merchantId: merchant.id, locked: merchant.locked });
+  res.json({ ok: true, merchantId: merchant.id, locked: merchant.locked, lockReason: merchant.lockReason || null });
 }));
 
 router.delete('/admin/transactions', requireAdminAuth, ah(async (req, res) => {
@@ -725,7 +760,7 @@ router.get('/payouts', requireAuth, ah(async (req, res) => {
   res.json({ payouts: all.filter(p => (p.mode || 'test') === mode) });
 }));
 
-router.post('/payouts', requireAuth, ah(async (req, res) => {
+router.post('/payouts', requireAuth, requireActive, ah(async (req, res) => {
   const { amount, method, bank, accountNumber, accountName, mobileProvider, mobileNumber, note } = req.body || {};
   const amt = Math.round(Number(amount));
   if (!amt || amt <= 0) { const e = new Error('Enter a valid amount.'); e.status = 400; throw e; }
@@ -1204,7 +1239,7 @@ router.post('/webhooks/nalopay', ah(async (req, res) => {
 
 /* ========================= KYC ========================= */
 
-router.post('/kyc', requireAuth, ah(async (req, res) => {
+router.post('/kyc', requireAuth, requireActive, ah(async (req, res) => {
   const merchant = req.merchant;
   if (merchant.kycStatus === 'approved') {
     const e = new Error('Your account is already verified.'); e.status = 409; throw e;
