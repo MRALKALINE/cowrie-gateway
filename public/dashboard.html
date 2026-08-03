@@ -435,6 +435,11 @@ input,select,textarea{font-family:inherit}
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
           API Keys &amp; Webhook
         </a>
+        <a href="#" data-view="support">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>
+          Contact support
+          <span id="supUnreadDot" style="display:none;width:7px;height:7px;background:#EF6A4C;border-radius:50%;margin-left:auto;flex-shrink:0"></span>
+        </a>
       </nav>
     </aside>
 
@@ -517,6 +522,7 @@ const VIEWS={
   'webhooks':       {title:'Webhook Deliveries',   desc:'Events delivered to your webhook endpoint.'},
   'api-keys':       {title:'API Keys & Webhook',   desc:'Manage your API keys and configure your webhook.'},
   'verification':   {title:'Account Verification', desc:'Submit your KYC documents to verify your business.'},
+  'support':        {title:'Contact Support',      desc:'Message our team and see their replies here.'},
 };
 
 async function loadView(view){
@@ -544,6 +550,7 @@ async function loadView(view){
     else if(view==='webhooks')        await renderWebhooks(vc);
     else if(view==='api-keys')        await renderApiKeys(vc);
     else if(view==='verification')    await renderVerification(vc);
+    else if(view==='support')         await renderSupport(vc);
     reveal3d(vc);
     initTilt(vc);
   }catch(err){
@@ -590,6 +597,87 @@ function revenueFor(days, idx){
     count:  slice.reduce((s,d) => s + (d.count ||0), 0),
     label:  p.label,
   };
+}
+
+/* ─── Contact support ─────────────────────────────────────────────────────
+   A message thread rather than a live socket: an unanswered question has to
+   survive a restart and wait in a queue an admin works through. Polls while
+   the view is open so a reply appears without a manual refresh. */
+let _supPoll=null;
+
+function supBubble(m){
+  const mine=m.from==='merchant';
+  return `<div style="display:flex;justify-content:${mine?'flex-end':'flex-start'};margin-bottom:10px">
+    <div style="max-width:78%;padding:11px 14px;border-radius:14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+      background:${mine?'rgba(12,110,119,.22)':'rgba(255,255,255,.06)'};
+      border:1px solid ${mine?'rgba(12,110,119,.4)':'var(--line)'};
+      border-bottom-${mine?'right':'left'}-radius:5px">
+      <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:5px">
+        ${mine?'You':'Support'} · ${fmtDate(m.createdAt)}
+      </div>
+      ${esc(m.body)}
+    </div>
+  </div>`;
+}
+
+async function renderSupport(el){
+  const {messages}=await API.get('/api/support');
+  const dot=document.getElementById('supUnreadDot');
+  if(dot) dot.style.display='none';   // opening the thread marks it read
+
+  el.innerHTML=`
+    <div class="panel r3d">
+      <div class="panel-head"><h2>Conversation</h2><span class="badge">${messages.length} message${messages.length!==1?'s':''}</span></div>
+      <div id="supThread" style="padding:18px;max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        ${messages.length?messages.map(supBubble).join(''):
+          `<div class="empty"><strong>No messages yet</strong>Ask us anything — payouts, verification, integration. We reply by email too.</div>`}
+      </div>
+      <div style="padding:16px 18px;border-top:1px solid var(--line-2)">
+        <textarea id="supBody" rows="3" placeholder="Describe the problem — include a reference if it is about a payment." style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:11px;padding:11px 13px;color:var(--ink);font-family:var(--body);font-size:14px;resize:vertical;outline:none"></textarea>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+          <button class="btn primary" id="supSend" style="padding:10px 20px;border-radius:11px">Send message</button>
+          <span class="fb" id="supFb"></span>
+        </div>
+      </div>
+    </div>`;
+
+  const thread=document.getElementById('supThread');
+  thread.scrollTop=thread.scrollHeight;
+
+  const send=async()=>{
+    const ta=document.getElementById('supBody');
+    const body=ta.value.trim();
+    const fb=document.getElementById('supFb');
+    fb.className='fb';
+    if(!body){ fb.textContent='Type a message first.'; fb.className='fb bad'; return; }
+    const btn=document.getElementById('supSend');
+    btn.disabled=true; btn.textContent='Sending…';
+    try{
+      await API.post('/api/support',{body});
+      ta.value='';
+      await refresh();
+      fb.textContent='Sent — we will reply here and by email.'; fb.className='fb ok';
+    }catch(e){ fb.textContent=e.message||'Could not send.'; fb.className='fb bad'; }
+    finally{ btn.disabled=false; btn.textContent='Send message'; }
+  };
+  document.getElementById('supSend').addEventListener('click',send);
+
+  async function refresh(){
+    try{
+      const {messages:fresh}=await API.get('/api/support');
+      const box=document.getElementById('supThread');
+      if(!box) return;                      // view changed underneath us
+      const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<40;
+      box.innerHTML=fresh.length?fresh.map(supBubble).join(''):box.innerHTML;
+      if(atBottom) box.scrollTop=box.scrollHeight;
+    }catch(e){/* transient — the next tick retries */}
+  }
+
+  if(_supPoll) clearInterval(_supPoll);
+  _supPoll=setInterval(()=>{
+    if(!document.getElementById('supThread')){ clearInterval(_supPoll); _supPoll=null; return; }
+    refresh();
+  },15000);
 }
 
 /* ─── Overview ─── */

@@ -5,7 +5,7 @@ const cfg = require('../lib/config');
 const payments = require('../lib/payments');
 const nalopay = require('../lib/nalopay');
 const webhooks = require('../lib/webhooks');
-const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert } = require('../lib/email');
+const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert, sendSupportMessageAlert, sendSupportReplyNotice } = require('../lib/email');
 const fx = require('../lib/fx');
 const { toGhsMinor } = fx;
 const {
@@ -681,6 +681,106 @@ router.get('/admin/members/:merchantId/transactions', requireAdminAuth, ah(async
    is refused outright — deleting an account you owe money to loses both the
    debt and the record of it. `force` exists for the case where that balance is
    known to be wrong, and is logged when used. */
+/* ═══════════════════════ Support conversations ═══════════════════════════
+   One thread per merchant. Reads stay open to deactivated merchants — being
+   able to ask why is exactly when support matters most — so requireActive is
+   not applied here. */
+
+const MAX_SUPPORT_LEN = 4000;
+
+function supportMessage({ merchantId, from, body, authorEmail }) {
+  return {
+    id: genId('sup_'),
+    merchantId,
+    from,                         // 'merchant' | 'admin'
+    authorEmail: authorEmail || null,
+    body: String(body).trim().slice(0, MAX_SUPPORT_LEN),
+    createdAt: Date.now(),
+    readAt: null,
+  };
+}
+
+/* ── merchant ── */
+router.get('/support', requireAuth, ah(async (req, res) => {
+  const messages = await store.support.forMerchant(req.merchant.id);
+  await store.support.markRead(req.merchant.id, 'admin', Date.now());
+  res.json({ messages });
+}));
+
+router.post('/support', requireAuth, ah(async (req, res) => {
+  const body = String((req.body && req.body.body) || '').trim();
+  if (!body) { const e = new Error('Type a message first.'); e.status = 400; throw e; }
+
+  const msg = await store.support.insert(supportMessage({
+    merchantId: req.merchant.id, from: 'merchant', body, authorEmail: req.merchant.email,
+  }));
+
+  /* Tell the admins, or a question sits unread until someone happens to open
+     the console. Only on the first unanswered message, so a merchant typing
+     several lines does not send several emails. */
+  const thread = await store.support.forMerchant(req.merchant.id);
+  const priorUnanswered = thread.filter((m) => m.from === 'merchant' && m.id !== msg.id && !m.readAt).length;
+  if (!priorUnanswered) {
+    const toList = await adminEmails();
+    if (toList.length) {
+      sendSupportMessageAlert(toList, {
+        merchantName: req.merchant.businessName,
+        merchantEmail: req.merchant.email,
+        body: msg.body,
+      }).catch((err) => console.warn('[support-alert]', err.message));
+    }
+  }
+  res.status(201).json({ message: msg });
+}));
+
+/* ── admin ── */
+router.get('/admin/support', requireAdminAuth, ah(async (req, res) => {
+  const [all, merchants] = await Promise.all([store.support.all(), store.merchants.all()]);
+  const byId = Object.fromEntries(merchants.map((m) => [m.id, m]));
+  const threads = {};
+  for (const m of all) {
+    const t = threads[m.merchantId] || (threads[m.merchantId] = {
+      merchantId: m.merchantId,
+      businessName: (byId[m.merchantId] || {}).businessName || 'Deleted merchant',
+      email: (byId[m.merchantId] || {}).email || null,
+      messages: 0, unread: 0, lastAt: 0, lastFrom: null, lastBody: '',
+    });
+    t.messages += 1;
+    if (m.from === 'merchant' && !m.readAt) t.unread += 1;
+    if (m.createdAt >= t.lastAt) { t.lastAt = m.createdAt; t.lastFrom = m.from; t.lastBody = m.body; }
+  }
+  /* Unanswered first, then most recent — the queue an admin works through. */
+  const list = Object.values(threads).sort((a, b) => (b.unread - a.unread) || (b.lastAt - a.lastAt));
+  res.json({ threads: list, totalUnread: list.reduce((s, t) => s + t.unread, 0) });
+}));
+
+router.get('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  const messages = await store.support.forMerchant(req.params.merchantId);
+  await store.support.markRead(req.params.merchantId, 'merchant', Date.now());
+  res.json({
+    messages,
+    merchant: merchant ? { id: merchant.id, businessName: merchant.businessName, email: merchant.email, locked: !!merchant.locked } : null,
+  });
+}));
+
+router.post('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+  const body = String((req.body && req.body.body) || '').trim();
+  if (!body) { const e = new Error('Type a reply first.'); e.status = 400; throw e; }
+
+  const msg = await store.support.insert(supportMessage({
+    merchantId: merchant.id, from: 'admin', body, authorEmail: req.adminEmail,
+  }));
+  if (merchant.email) {
+    sendSupportReplyNotice(merchant.email, {
+      businessName: merchant.businessName, body: msg.body,
+    }).catch((err) => console.warn('[support-reply-notice]', err.message));
+  }
+  res.status(201).json({ message: msg });
+}));
+
 router.delete('/admin/members/:merchantId', requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
@@ -719,6 +819,7 @@ router.delete('/admin/members/:merchantId', requireAdminAuth, ah(async (req, res
   await store.charges.clearForMerchant(merchant.id);
   await store.events.clearForMerchant(merchant.id);
   await store.payouts.clearForMerchant(merchant.id);
+  await store.support.clearForMerchant(merchant.id);
   await store.merchants.del(merchant.id);
 
   console.warn(`[admin] ${req.adminEmail} deleted merchant ${merchant.id} (${merchant.businessName}) — ${charges.length} charges, ${payouts.length} payouts`);
