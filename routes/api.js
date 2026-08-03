@@ -606,6 +606,13 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
     const testPaidOut = allPayouts
       .filter((p) => p.merchantId === m.id && p.status === 'completed' && (p.mode || 'test') === 'test')
       .reduce((s, p) => s + p.amount, 0);
+    /* liveCollected is what the merchant still holds — gross less payouts
+       already completed. That is the only figure the console had, so there was
+       no way to see what a merchant had actually earned: a merchant paid out
+       in full showed zero. Return the gross and the payout total alongside it. */
+    const liveGross = liveOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
+    const testGross = testOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
+
     return {
       id: m.id,
       businessName: m.businessName,
@@ -614,10 +621,15 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
       createdAt: m.createdAt,
       locked: !!m.locked,
       demo: !!m.demo,
-      liveCollected: Math.max(0, liveOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0) - livePaidOut),
-      testCollected: Math.max(0, testOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0) - testPaidOut),
+      liveGross,
+      testGross,
+      livePaidOut,
+      testPaidOut,
+      liveCollected: Math.max(0, liveGross - livePaidOut),
+      testCollected: Math.max(0, testGross - testPaidOut),
       totalTransactions: charges.length,
       liveTransactions: charges.filter((c) => (c.mode || 'test') === 'live').length,
+      liveSuccessful: liveOk.length,
       successfulTransactions: successful.length,
     };
   });

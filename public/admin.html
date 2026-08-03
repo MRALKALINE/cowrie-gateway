@@ -1210,16 +1210,24 @@ async function renderMembers(el){
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:right;flex-shrink:0">Joined<br>${fmtDate(m.createdAt)}</div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <!-- Total revenue is what the merchant has earned; live collected is what
+           is still held after payouts. Showing only the second meant a merchant
+           paid out in full read as zero revenue. -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
+        <div style="background:rgba(12,110,119,.12);border:1px solid rgba(12,110,119,.28);border-radius:14px;padding:16px 18px">
+          <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#8FE3EC;margin-bottom:6px">Total revenue</div>
+          <div style="font-family:var(--mono);font-weight:800;font-size:22px;color:#8FE3EC">${fmt(m.liveGross||0,'GHS')}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.35);margin-top:4px">${m.liveSuccessful||0} live payment${(m.liveSuccessful||0)!==1?'s':''} · all time</div>
+        </div>
         <div style="background:rgba(31,168,119,.1);border:1px solid rgba(31,168,119,.2);border-radius:14px;padding:16px 18px">
           <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--mint);margin-bottom:6px">Live collected</div>
           <div style="font-family:var(--mono);font-weight:800;font-size:22px;color:var(--mint)">${fmt(m.liveCollected,'GHS')}</div>
-          <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.35);margin-top:4px">${m.liveTransactions} live txn${m.liveTransactions!==1?'s':''}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.35);margin-top:4px">after ${fmt(m.livePaidOut||0,'GHS')} paid out</div>
         </div>
         <div style="background:rgba(224,161,46,.08);border:1px solid rgba(224,161,46,.18);border-radius:14px;padding:16px 18px">
           <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--gold);margin-bottom:6px">Test volume</div>
           <div style="font-family:var(--mono);font-weight:800;font-size:22px;color:var(--gold)">${fmt(m.testCollected,'GHS')}</div>
-          <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.35);margin-top:4px">${m.totalTransactions-m.liveTransactions} test txn${(m.totalTransactions-m.liveTransactions)!==1?'s':''}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.35);margin-top:4px">${m.totalTransactions-m.liveTransactions} test txns</div>
         </div>
       </div>
 
