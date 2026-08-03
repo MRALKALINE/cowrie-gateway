@@ -12,19 +12,49 @@ const nalopay = require('./lib/nalopay');
 const app = express();
 app.set('trust proxy', true);
 
-/* Security headers on every response */
+/* Security headers on every response.
+
+   The Content-Security-Policy has to allow inline script and style: the
+   dashboards are single files with their markup, styles and logic together,
+   and 'unsafe-inline' is the price of that. It still earns its place — it
+   stops a script being pulled from another origin, confines fetches to this
+   host, and blocks framing, plugins and form posts elsewhere. Tightening it
+   further means extracting the inline code first. */
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: https:",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+].join('; ');
+
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', CSP);
+  /* Render terminates TLS, so this is only meaningful in production. */
+  if (process.env.RENDER) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   next();
 });
 
-/* KYC submissions send up to 3 base64 images (~7 MB each); keep limit generous.
+/* KYC submits three base64 images and genuinely needs room. Every other route
+   needs a fraction of that, and a 20 MB allowance applied globally let anyone
+   post 20 MB to any endpoint — including the unauthenticated webhook — and
+   have the server buffer it. The large limit is scoped to KYC alone.
    rawBody is retained for any webhook route that needs the unparsed payload. */
-app.use(express.json({ limit: '20mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+const keepRaw = (req, _res, buf) => { req.rawBody = buf; };
+app.use('/api/kyc', express.json({ limit: '20mb', verify: keepRaw }));
+app.use(express.json({ limit: '256kb', verify: keepRaw }));
+app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 
 app.use('/api', api);
 

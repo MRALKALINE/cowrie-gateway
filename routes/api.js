@@ -65,6 +65,17 @@ const globalLimiter = rateLimit({ windowMs: 60_000, max: 200 }); // all routes
 const authLimiter   = rateLimit({ windowMs: 60_000, max: 10  }); // login / register
 const chargeLimiter = rateLimit({ windowMs: 60_000, max: 60  }); // charge creation
 const payLimiter    = rateLimit({ windowMs: 60_000, max: 20  }); // payment actions
+/* The Nalopay callback is unauthenticated and every call makes us hit their
+   API to verify the status, so an unbounded flood becomes an amplifier
+   against our own gateway account as well as this server. */
+const webhookLimiter = rateLimit({ windowMs: 60_000, max: 120 });
+/* Each support message writes a row and can trigger an email. */
+const supportLimiter = rateLimit({ windowMs: 60_000, max: 12  });
+/* KYC accepts megabytes of base64 per submission. */
+const kycLimiter     = rateLimit({ windowMs: 60_000, max: 5   });
+/* Blanket cap on authenticated writes so one compromised session cannot
+   hammer the database. Generous enough not to interrupt real use. */
+const writeLimiter   = rateLimit({ windowMs: 60_000, max: 90  });
 
 router.use(globalLimiter);
 
@@ -344,7 +355,7 @@ router.get('/info', (req, res) => {
   res.json({ testMode: !nalopay.configured() || process.env.NALOPAY_TEST_MODE === 'true' });
 });
 
-router.put('/me/webhook', requireAuth, requireActive, ah(async (req, res) => {
+router.put('/me/webhook', writeLimiter, requireAuth, requireActive, ah(async (req, res) => {
   const { url } = req.body || {};
   if (url) assertWebUrl(url, 'webhook url');
   req.merchant.webhookUrl = url || null;
@@ -352,7 +363,7 @@ router.put('/me/webhook', requireAuth, requireActive, ah(async (req, res) => {
   res.json({ merchant: publicMerchant(req.merchant) });
 }));
 
-router.put('/me/website', requireAuth, requireActive, ah(async (req, res) => {
+router.put('/me/website', writeLimiter, requireAuth, requireActive, ah(async (req, res) => {
   const { url } = req.body || {};
   if (url) assertWebUrl(url, 'website url');
   req.merchant.websiteUrl = url || null;
@@ -369,7 +380,7 @@ router.get('/transactions', requireAuth, ah(async (req, res) => {
   res.json({ transactions });
 }));
 
-router.delete('/transactions', requireAuth, requireActive, ah(async (req, res) => {
+router.delete('/transactions', writeLimiter, requireAuth, requireActive, ah(async (req, res) => {
   const { mode } = req.query;
   if (mode === 'live' || mode === 'test') {
     await store.charges.clearForMerchantByMode(req.merchant.id, mode);
@@ -392,7 +403,7 @@ router.get('/payment-links', requireAuth, ah(async (req, res) => {
   res.json({ links });
 }));
 
-router.post('/payment-links', requireAuth, requireActive, chargeLimiter, ah(async (req, res) => {
+router.post('/payment-links', writeLimiter, requireAuth, requireActive, chargeLimiter, ah(async (req, res) => {
   const { amount, currency, email, description, openAmount } = req.body || {};
   const isOpen = Boolean(openAmount);
   const amountMinor = isOpen ? 0 : Math.round(Number(amount) * 100);
@@ -520,7 +531,7 @@ router.get('/admin/admins', requireAdminAuth, ah(async (req, res) => {
   res.json({ admins: await listAdmins() });
 }));
 
-router.put('/admin/password', requireAdminAuth, ah(async (req, res) => {
+router.put('/admin/password', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!(await findAdmin(req.adminEmail, currentPassword))) {
     const e = new Error('Current password is incorrect.'); e.status = 401; throw e;
@@ -529,13 +540,13 @@ router.put('/admin/password', requireAdminAuth, ah(async (req, res) => {
   res.json({ ok: true });
 }));
 
-router.post('/admin/admins', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/admins', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { email, password } = req.body || {};
   await setPassword(email, password);
   res.status(201).json({ ok: true, email: String(email).trim().toLowerCase() });
 }));
 
-router.delete('/admin/admins/:email', requireAdminAuth, ah(async (req, res) => {
+router.delete('/admin/admins/:email', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const target = String(req.params.email || '').trim().toLowerCase();
   if (target === String(req.adminEmail || '').toLowerCase()) {
     const e = new Error('You cannot remove your own account.'); e.status = 400; throw e;
@@ -707,7 +718,7 @@ router.get('/support', requireAuth, ah(async (req, res) => {
   res.json({ messages });
 }));
 
-router.post('/support', requireAuth, ah(async (req, res) => {
+router.post('/support', supportLimiter, requireAuth, ah(async (req, res) => {
   const body = String((req.body && req.body.body) || '').trim();
   if (!body) { const e = new Error('Type a message first.'); e.status = 400; throw e; }
 
@@ -735,7 +746,7 @@ router.post('/support', requireAuth, ah(async (req, res) => {
 
 /* Clearing removes the thread for both sides — there is one conversation, not
    a copy each. Both UIs say so before asking for confirmation. */
-router.delete('/support', requireAuth, ah(async (req, res) => {
+router.delete('/support', writeLimiter, requireAuth, ah(async (req, res) => {
   const before = (await store.support.forMerchant(req.merchant.id)).length;
   await store.support.clearForMerchant(req.merchant.id);
   res.json({ ok: true, cleared: before });
@@ -772,14 +783,14 @@ router.get('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) =
   });
 }));
 
-router.delete('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) => {
+router.delete('/admin/support/:merchantId', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const before = (await store.support.forMerchant(req.params.merchantId)).length;
   await store.support.clearForMerchant(req.params.merchantId);
   console.warn(`[admin] ${req.adminEmail} cleared the support thread for ${req.params.merchantId} (${before} messages)`);
   res.json({ ok: true, cleared: before });
 }));
 
-router.post('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/support/:merchantId', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
   const body = String((req.body && req.body.body) || '').trim();
@@ -796,7 +807,7 @@ router.post('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) 
   res.status(201).json({ message: msg });
 }));
 
-router.delete('/admin/members/:merchantId', requireAdminAuth, ah(async (req, res) => {
+router.delete('/admin/members/:merchantId', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
 
@@ -844,7 +855,7 @@ router.delete('/admin/members/:merchantId', requireAdminAuth, ah(async (req, res
   });
 }));
 
-router.post('/admin/members/:merchantId/lock', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/members/:merchantId/lock', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
   const locking = !!(req.body && req.body.locked);
@@ -869,7 +880,7 @@ router.post('/admin/members/:merchantId/lock', requireAdminAuth, ah(async (req, 
   res.json({ ok: true, merchantId: merchant.id, locked: merchant.locked, lockReason: merchant.lockReason || null });
 }));
 
-router.delete('/admin/transactions', requireAdminAuth, ah(async (req, res) => {
+router.delete('/admin/transactions', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { mode } = req.query; // ?mode=live or ?mode=test — omit for all
   if (mode === 'live' || mode === 'test') {
     await store.charges.clearByMode(mode);
@@ -899,7 +910,7 @@ router.get('/admin/payouts', requireAdminAuth, ah(async (req, res) => {
   res.json({ payouts });
 }));
 
-router.post('/admin/payouts', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/payouts', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { amount, currency, recipient, method, note } = req.body || {};
   if (!amount || Number(amount) <= 0) { const e = new Error('amount must be a positive number in minor units.'); e.status = 400; throw e; }
   if (!recipient || !String(recipient).trim()) { const e = new Error('recipient is required.'); e.status = 400; throw e; }
@@ -915,7 +926,7 @@ router.post('/admin/payouts', requireAdminAuth, ah(async (req, res) => {
   res.status(201).json({ payout });
 }));
 
-router.post('/admin/payouts/:id/complete', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/payouts/:id/complete', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const payout = await store.payouts.byId(req.params.id);
   if (!payout) { const e = new Error('Payout not found.'); e.status = 404; throw e; }
   if (payout.status === 'completed') { const e = new Error('Payout already completed.'); e.status = 409; throw e; }
@@ -931,7 +942,7 @@ router.get('/payouts', requireAuth, ah(async (req, res) => {
   res.json({ payouts: all.filter(p => (p.mode || 'test') === mode) });
 }));
 
-router.post('/payouts', requireAuth, requireActive, ah(async (req, res) => {
+router.post('/payouts', writeLimiter, requireAuth, requireActive, ah(async (req, res) => {
   const { amount, method, bank, accountNumber, accountName, mobileProvider, mobileNumber, note } = req.body || {};
   const amt = Math.round(Number(amount));
   if (!amt || amt <= 0) { const e = new Error('Enter a valid amount.'); e.status = 400; throw e; }
@@ -983,7 +994,7 @@ router.get('/admin/settlements', requireAdminAuth, ah(async (req, res) => {
   res.json({ settlements: await store.settlements.all() });
 }));
 
-router.post('/admin/settlements', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/settlements', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const unsettled = (await store.charges.all()).filter((c) => c.status === 'success' && !c.settled);
   if (!unsettled.length) { const e = new Error('No unsettled successful transactions to settle.'); e.status = 400; throw e; }
   const amount = unsettled.reduce((s, c) => s + c.amount, 0);
@@ -997,7 +1008,7 @@ router.post('/admin/settlements', requireAdminAuth, ah(async (req, res) => {
   res.status(201).json({ settlement });
 }));
 
-router.post('/admin/new-payment', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/new-payment', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { amount, currency, email, mode, openAmount } = req.body || {};
   const isOpen = Boolean(openAmount);
   const all = await store.merchants.all();
@@ -1029,7 +1040,7 @@ router.get('/admin/bank-accounts', requireAdminAuth, ah(async (req, res) => {
   res.json({ accounts, banks: NG_BANKS });
 }));
 
-router.put('/admin/bank-accounts', requireAdminAuth, ah(async (req, res) => {
+router.put('/admin/bank-accounts', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { accounts } = req.body || {};
   if (!Array.isArray(accounts)) throw Object.assign(new Error('accounts must be an array.'), { status: 400 });
   const cleaned = accounts.slice(0, 5).map(a => ({
@@ -1052,7 +1063,7 @@ router.get('/bank-accounts', ah(async (req, res) => {
 }));
 
 /* Called by checkout when customer views static bank details — emails admin once per charge */
-router.post('/charges/:reference/notify-transfer', loadCharge, ah(async (req, res) => {
+router.post('/charges/:reference/notify-transfer', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
   const { payerName } = req.body || {};
   if (payerName && String(payerName).trim() && !charge.payerName) charge.payerName = String(payerName).trim();
@@ -1072,7 +1083,7 @@ router.post('/charges/:reference/notify-transfer', loadCharge, ah(async (req, re
   res.json({ ok: true });
 }));
 
-router.post('/admin/charges/:reference/mark-paid', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/charges/:reference/mark-paid', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const charge = await store.charges.byReference(req.params.reference);
   if (!charge) throw Object.assign(new Error('Charge not found.'), { status: 404 });
   if (charge.status === 'success') throw Object.assign(new Error('Charge is already marked as paid.'), { status: 409 });
@@ -1392,7 +1403,7 @@ router.get('/charges/:reference/verify', payLimiter, loadCharge, ah(async (req, 
    nudge: it tells us which order to look at, and nothing more. The status is
    always re-fetched from Nalopay before a charge is marked paid. Without this,
    anyone who learns the callback URL could POST a forged COMPLETED. */
-router.post('/webhooks/nalopay', ah(async (req, res) => {
+router.post('/webhooks/nalopay', webhookLimiter, ah(async (req, res) => {
   const body = req.body || {};
   const orderId = body.order_id;
   const cowrieRef = cowrieRefFromCallback(body);
@@ -1410,7 +1421,7 @@ router.post('/webhooks/nalopay', ah(async (req, res) => {
 
 /* ========================= KYC ========================= */
 
-router.post('/kyc', requireAuth, requireActive, ah(async (req, res) => {
+router.post('/kyc', kycLimiter, requireAuth, requireActive, ah(async (req, res) => {
   const merchant = req.merchant;
   if (merchant.kycStatus === 'approved') {
     const e = new Error('Your account is already verified.'); e.status = 409; throw e;
@@ -1485,7 +1496,7 @@ router.get('/admin/kyc', requireAdminAuth, ah(async (req, res) => {
   res.json({ merchants });
 }));
 
-router.post('/admin/kyc/:merchantId/approve', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/kyc/:merchantId/approve', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
   merchant.kycStatus = 'approved';
@@ -1496,7 +1507,7 @@ router.post('/admin/kyc/:merchantId/approve', requireAdminAuth, ah(async (req, r
   res.json({ merchant: publicMerchant(merchant) });
 }));
 
-router.post('/admin/kyc/:merchantId/reject', requireAdminAuth, ah(async (req, res) => {
+router.post('/admin/kyc/:merchantId/reject', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
   const reason = String((req.body || {}).reason || '').trim() || 'Your submission did not meet our requirements.';
@@ -1603,7 +1614,7 @@ router.get('/admin/gateways', requireAdminAuth, ah(async (req, res) => {
   });
 }));
 
-router.put('/admin/gateways/:id', requireAdminAuth, ah(async (req, res) => {
+router.put('/admin/gateways/:id', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { id } = req.params;
   if (!SUPPORTED_GATEWAYS.find(g => g.id === id)) {
     const e = new Error('Unknown gateway.'); e.status = 400; throw e;
@@ -1627,7 +1638,7 @@ router.put('/admin/gateways/:id', requireAdminAuth, ah(async (req, res) => {
   res.json({ ok: true });
 }));
 
-router.put('/admin/gateways/:id/toggle', requireAdminAuth, ah(async (req, res) => {
+router.put('/admin/gateways/:id/toggle', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { id } = req.params;
   if (!SUPPORTED_GATEWAYS.find(g => g.id === id)) {
     const e = new Error('Unknown gateway.'); e.status = 400; throw e;
@@ -1640,7 +1651,7 @@ router.put('/admin/gateways/:id/toggle', requireAdminAuth, ah(async (req, res) =
   res.json({ ok: true, activeGateway: gs.activeGateway });
 }));
 
-router.delete('/admin/gateways/:id', requireAdminAuth, ah(async (req, res) => {
+router.delete('/admin/gateways/:id', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const { id } = req.params;
   const gs = (await store.settings.get('gateways')) || { activeGateway: null, installed: [], gateways: {} };
   gs.installed = (gs.installed || []).filter(x => x !== id);
