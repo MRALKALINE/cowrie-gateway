@@ -788,10 +788,12 @@ async function renderOverview(el){
 
     <div class="chart-wrap r3d">
       <div class="chart-head">
-        <h3>Collections — last 7 days</h3>
-        <span class="badge">${overview.last7Days.filter(d=>d.count>0).length} active days</span>
+        <h3>Live revenue — last 7 days</h3>
+        <span class="badge">${(overview.revenueByDay||[]).filter(d=>d.count>0).length} active days</span>
       </div>
-      <div class="chart-inner">${barChart(overview.last7Days)}</div>
+      <!-- revenueByDay is newest-first for the period selector; the chart reads
+           left-to-right, so it is reversed here rather than kept twice. -->
+      <div class="chart-inner">${barChart([...(overview.revenueByDay||[])].reverse())}</div>
       ${methodBreakdown(overview.byMethod)}
     </div>
 
@@ -830,7 +832,7 @@ function barChart(days){
       stroke="${isToday?'var(--plum-br)':'rgba(12,110,119,.2)'}" stroke-width="${isToday?1.5:1}"/>`;
     labels += `<text x="${x+barW/2}" y="${H+18}" text-anchor="middle"
       font-size="9.5" fill="${isToday?'rgba(228,238,240,.9)':'rgba(228,238,240,.4)'}" font-family="var(--mono)"
-      font-weight="${isToday?700:400}">${esc(d.date)}</text>`;
+      font-weight="${isToday?700:400}">${esc(d.label||d.date)}</text>`;
     if(d.amount>0){
       const displayAmt = (d.amount/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
       tooltips += `<text x="${x+barW/2}" y="${y-5}" text-anchor="middle"
