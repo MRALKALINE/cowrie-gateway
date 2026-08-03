@@ -610,6 +610,10 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
   const collectedToday = paidTodayList.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
   const collectedTodayCount = paidTodayList.length;
   const grossCollected = liveSuccess.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
+  /* Fees are what the platform keeps: charged on top of the merchant's amount,
+     so they are counted separately and never appear in merchant revenue. Older
+     charges predate the field and contribute nothing. */
+  const feesCollected = liveSuccess.reduce((s, c) => s + toGhs(c.feeAmount || 0, c.currency), 0);
   const testCollected  = testSuccess.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
   const totalPaidOut   = allPayouts.filter((p) => p.status === 'completed').reduce((s, p) => s + p.amount, 0);
   const totalCollected = Math.max(0, grossCollected - totalPaidOut);
@@ -637,6 +641,7 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
       date: d.toISOString().slice(0, 10),
       label: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
       amount: inDay.reduce((s, c) => s + toGhs(c.amount, c.currency), 0),
+      fee: inDay.reduce((s, c) => s + toGhs(c.feeAmount || 0, c.currency), 0),
       count: inDay.length,
     });
   }
@@ -651,7 +656,7 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
   res.json({
     overview: {
       collectedToday, collectedTodayCount, paidOutToday,
-      grossCollected, totalPaidOut, liveCount: liveSuccess.length,
+      grossCollected, feesCollected, totalPaidOut, liveCount: liveSuccess.length,
       totalCollected, testCollected, merchantCount, successRate, pendingCount,
       revenueByDay, byMethod,
     },

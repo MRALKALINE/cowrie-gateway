@@ -811,6 +811,11 @@ async function renderOverview(el){
         <div class="v" id="revValue" style="color:#8FE3EC">${fmt(revenueFor(overview.revenueByDay,revPeriodIdx).amount)}</div>
         <div class="t ok" id="revCaption">● Live · ${revenueFor(overview.revenueByDay,revPeriodIdx).count} payment${revenueFor(overview.revenueByDay,revPeriodIdx).count!==1?'s':''}</div>
       </div>
+      <div class="kpi r3d" style="border-color:rgba(224,161,46,.4);box-shadow:0 0 0 1px rgba(224,161,46,.14) inset">
+        <div class="l">Fees earned</div>
+        <div class="v" id="feeValue" style="color:var(--gold)">${fmt(revenueFor(overview.revenueByDay,revPeriodIdx).fee)}</div>
+        <div class="t ok" id="feeCaption">● Platform · ${fmt(overview.feesCollected||0)} all time</div>
+      </div>
       <div class="kpi r3d">
         <div class="l">Total revenue</div>
         <div class="v">${fmt(overview.grossCollected||0)}</div>
@@ -882,6 +887,8 @@ async function renderOverview(el){
     document.getElementById('revValue').textContent = fmt(r.amount);
     document.getElementById('revCaption').textContent =
       `● Live · ${r.count} payment${r.count !== 1 ? 's' : ''}`;
+    const fv = document.getElementById('feeValue');
+    if (fv) fv.textContent = fmt(r.fee);
   });
 }
 
@@ -2289,6 +2296,7 @@ function revenueFor(days, idx){
   const slice = (days || []).slice(p.from, p.to + 1);
   return {
     amount: slice.reduce((s, d) => s + (d.amount || 0), 0),
+    fee:    slice.reduce((s, d) => s + (d.fee    || 0), 0),
     count:  slice.reduce((s, d) => s + (d.count  || 0), 0),
     label:  p.label,
   };
