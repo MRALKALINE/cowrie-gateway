@@ -659,6 +659,8 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
   const [allCharges, allPayouts] = await Promise.all([store.charges.all(), store.payouts.all()]);
   const rates = await fx.getRates();
   const toGhs = (amount, currency) => fx.toGhsMinor(amount, currency, rates);
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const todayStart = midnight.getTime();
   const members = merchants.map((m) => {
     const charges = allCharges.filter((c) => c.merchantId === m.id);
     const successful = charges.filter((c) => c.status === 'success');
@@ -677,6 +679,12 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
     const liveGross = liveOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
     const testGross = testOk.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
 
+    /* Today's live take for this merchant, dated by paidAt like every other
+       revenue figure — a charge raised yesterday and approved this morning
+       belongs to today. */
+    const liveTodayList = liveOk.filter((c) => (c.paidAt || c.createdAt) >= todayStart);
+    const liveToday = liveTodayList.reduce((s, c) => s + toGhs(c.amount, c.currency), 0);
+
     return {
       id: m.id,
       businessName: m.businessName,
@@ -688,6 +696,8 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
       lockedAt: m.lockedAt || null,
       demo: !!m.demo,
       liveGross,
+      liveToday,
+      liveTodayCount: liveTodayList.length,
       testGross,
       livePaidOut,
       testPaidOut,
