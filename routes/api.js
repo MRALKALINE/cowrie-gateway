@@ -673,6 +673,61 @@ router.get('/admin/members/:merchantId/transactions', requireAdminAuth, ah(async
   res.json({ transactions: charges });
 }));
 
+/* Permanently removes a merchant and everything belonging to them.
+
+   Two guards, because this is irreversible and there is no backup to restore
+   from. The business name must be echoed back exactly, so it cannot be fired
+   by a stray request or a misplaced click. And a merchant still holding funds
+   is refused outright — deleting an account you owe money to loses both the
+   debt and the record of it. `force` exists for the case where that balance is
+   known to be wrong, and is logged when used. */
+router.delete('/admin/members/:merchantId', requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+
+  const confirm = String((req.body && req.body.confirm) || req.query.confirm || '').trim();
+  if (confirm !== String(merchant.businessName || '').trim()) {
+    const e = new Error('Type the exact business name to confirm deletion.'); e.status = 400; throw e;
+  }
+
+  const [charges, payouts, rates] = await Promise.all([
+    store.charges.forMerchant(merchant.id),
+    store.payouts.forMerchant(merchant.id),
+    fx.getRates(),
+  ]);
+  const liveGross = charges
+    .filter((c) => c.status === 'success' && (c.mode || 'test') === 'live')
+    .reduce((s, c) => s + fx.toGhsMinor(c.amount, c.currency, rates), 0);
+  const livePaidOut = payouts
+    .filter((p) => p.status === 'completed' && (p.mode || 'test') === 'live')
+    .reduce((s, p) => s + p.amount, 0);
+  const held = Math.max(0, liveGross - livePaidOut);
+
+  const force = String((req.body && req.body.force) || req.query.force || '') === 'true';
+  if (held > 0 && !force) {
+    const e = new Error(
+      `This merchant still holds GHS ${(held / 100).toFixed(2)}. Pay it out first, or deactivate the account instead of deleting it.`,
+    );
+    e.status = 409; throw e;
+  }
+  if (held > 0 && force) {
+    console.warn(`[admin] ${req.adminEmail} force-deleted ${merchant.id} (${merchant.businessName}) holding GHS ${(held / 100).toFixed(2)}`);
+  }
+
+  /* Records go before the merchant: if this fails half-way the merchant row
+     survives, so the orphans stay reachable rather than becoming invisible. */
+  await store.charges.clearForMerchant(merchant.id);
+  await store.events.clearForMerchant(merchant.id);
+  await store.payouts.clearForMerchant(merchant.id);
+  await store.merchants.del(merchant.id);
+
+  console.warn(`[admin] ${req.adminEmail} deleted merchant ${merchant.id} (${merchant.businessName}) — ${charges.length} charges, ${payouts.length} payouts`);
+  res.json({
+    ok: true,
+    deleted: { merchantId: merchant.id, businessName: merchant.businessName, charges: charges.length, payouts: payouts.length },
+  });
+}));
+
 router.post('/admin/members/:merchantId/lock', requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }

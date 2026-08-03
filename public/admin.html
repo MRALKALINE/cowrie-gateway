@@ -1260,6 +1260,15 @@ async function renderMembers(el){
         <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:7px;text-align:center">${m.locked?'This member cannot log in or take payments.':'Locking blocks login, dashboard access and all API/payment activity.'}</div>
       </div>
 
+      <div style="margin-bottom:16px;padding-top:14px;border-top:1px solid var(--line-2)">
+        <button id="mbDeleteBtn" style="width:100%;min-height:44px;padding:11px 18px;border-radius:12px;font-family:var(--display);font-weight:700;font-size:13.5px;cursor:pointer;background:rgba(239,106,76,.1);border:1px solid rgba(239,106,76,.3);color:#EF6A4C">
+          Delete account permanently
+        </button>
+        <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:7px;text-align:center;line-height:1.5">
+          Removes the merchant, their API keys and all their records. Cannot be undone — deactivate instead if you may need them back.
+        </div>
+      </div>
+
       <div class="panel r3d">
         <div class="panel-head">
           <h2>Transactions</h2>
@@ -1300,6 +1309,30 @@ The reason below is shown to them when they sign in. They will still be able to 
       } catch(e) {
         alert('Failed: ' + (e.message||'unknown error'));
         showDetail(m);
+      }
+    });
+
+    document.getElementById('mbDeleteBtn').addEventListener('click', async ()=>{
+      /* Typing the name is the guard against a misplaced click; the server
+         checks it again, and refuses outright if funds are still held. */
+      const typed = (prompt(
+        `Permanently delete "${m.businessName}"?
+
+This removes the merchant, their API keys and all their transactions, payouts and events. It cannot be undone.
+
+Type the business name to confirm:`,
+        '') || '').trim();
+      if (!typed) return;
+      if (typed !== m.businessName) { alert('That does not match the business name. Nothing was deleted.'); return; }
+      const btn = document.getElementById('mbDeleteBtn');
+      btn.disabled = true; btn.textContent = 'Deleting…';
+      try {
+        const r = await API.delete(`/api/admin/members/${encodeURIComponent(m.id)}?confirm=${encodeURIComponent(typed)}`);
+        alert(`Deleted "${r.deleted.businessName}" — ${r.deleted.charges} transaction(s) and ${r.deleted.payouts} payout(s) removed.`);
+        loadView('members');
+      } catch(e) {
+        alert(e.message || 'Delete failed');
+        btn.disabled = false; btn.textContent = 'Delete account permanently';
       }
     });
 
