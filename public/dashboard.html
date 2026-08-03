@@ -387,6 +387,28 @@ input,select,textarea{font-family:inherit}
 .hv-row{transition:.12s}
 .hv-row:hover{background:rgba(255,255,255,.07)!important}
 .fx-search:focus{border-color:rgba(12,110,119,.55)!important;box-shadow:0 0 0 3px rgba(12,110,119,.15)!important}
+
+/* ─── Tablets (641–860px) ──────────────────────────────────────────────────
+   Between a phone and a desktop. The drawer stays — a 220px sidebar would
+   leave barely 540px for tables five to eight columns wide — but everything
+   else was inheriting phone sizing, so an 820px iPad was showing 17px figures
+   in half-width tiles with phone padding. This tier gives the space back. */
+@media(min-width:641px) and (max-width:860px){
+  .wrap{padding:0 24px}
+  .content{padding:22px;border-radius:18px}
+  .kpis{grid-template-columns:repeat(3,1fr);gap:14px}
+  .kpi-tile .kv,.kpi .v{font-size:23px}
+  .kpi-tile .kl,.kpi .l{font-size:12px}
+  .kpi-tile .ks,.kpi .t{font-size:11.5px}
+  .panel-head h2{font-size:16.5px}
+  .vhdr h1{font-size:26px}
+  /* Tables stay real tables here and scroll within their own bounds. */
+  .table th,.table td{padding:11px 13px;font-size:13px}
+  /* The drawer can afford to be wider on a tablet. */
+  .sidebar{width:min(46vw,320px)}
+  .chat-wrap{height:min(56vh,540px)}
+  .chat-bub{max-width:min(70%,520px)}
+}
 </style>
 </head>
 <body>
