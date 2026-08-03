@@ -1,5 +1,7 @@
 'use strict';
+const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const store = require('./lib/store');
 const cfg = require('./lib/config');
@@ -12,33 +14,38 @@ const nalopay = require('./lib/nalopay');
 const app = express();
 app.set('trust proxy', true);
 
-/* Security headers on every response.
+/* Security headers on every response. */
+/* Each response gets a fresh nonce, stamped onto the inline <script> as the
+   page is served. That lets script-src drop 'unsafe-inline': our own script
+   runs because it carries the nonce, while anything injected into the page
+   does not and is refused. An attacker cannot guess the value — it changes
+   per response.
 
-   The Content-Security-Policy has to allow inline script and style: the
-   dashboards are single files with their markup, styles and logic together,
-   and 'unsafe-inline' is the price of that. It still earns its place — it
-   stops a script being pulled from another origin, confines fetches to this
-   host, and blocks framing, plugins and form posts elsewhere. Tightening it
-   further means extracting the inline code first. */
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com data:",
-  "img-src 'self' data: https:",
-  "connect-src 'self'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-].join('; ');
+   style-src keeps 'unsafe-inline' deliberately. There are ~490 style
+   attributes across these pages, removing them is a rewrite rather than a
+   hardening step, and injected CSS cannot execute script. */
+function cspFor(nonce) {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}'`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: https:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+  ].join('; ');
+}
 
 app.use((req, res, next) => {
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy', CSP);
+  res.setHeader('Content-Security-Policy', cspFor(res.locals.nonce));
   /* Render terminates TLS, so this is only meaningful in production. */
   if (process.env.RENDER) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -59,14 +66,41 @@ app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 app.use('/api', api);
 
 const pub = path.join(__dirname, 'public');
+
+/* Pages are served through here rather than sendFile so the per-response
+   nonce can be stamped onto the inline <script>. Without that the browser
+   would refuse to run it, since script-src no longer allows 'unsafe-inline'.
+
+   File contents are read once and cached; only the nonce differs per
+   response, so the substitution is the only per-request work. */
+const htmlCache = new Map();
+function sendPage(res, name) {
+  let html = htmlCache.get(name);
+  if (html === undefined) {
+    html = fs.readFileSync(path.join(pub, name), 'utf8');
+    htmlCache.set(name, html);
+  }
+  res.type('html').send(
+    html.replace(/<script(?![^>]*\ssrc=)/g, `<script nonce="${res.locals.nonce}"`),
+  );
+}
+
+/* Requesting a page by filename must go through the same path, or it would be
+   served raw by express.static with no nonce and a dead script. */
+app.get(/\.html$/, (req, res, next) => {
+  const name = path.basename(req.path);
+  if (!htmlCache.has(name) && !fs.existsSync(path.join(pub, name))) return next();
+  sendPage(res, name);
+});
 app.use(express.static(pub));
-app.get('/',           (_, res) => res.sendFile(path.join(pub, 'index.html')));
-app.get('/login',      (_, res) => res.sendFile(path.join(pub, 'login.html')));
-app.get('/checkout',   (_, res) => res.sendFile(path.join(pub, 'checkout.html')));
-app.get('/dashboard',  (_, res) => res.sendFile(path.join(pub, 'dashboard.html')));
-app.get('/register',   (_, res) => res.sendFile(path.join(pub, 'register.html')));
-app.get('/admin',      (_, res) => res.sendFile(path.join(pub, 'admin.html')));
-app.get('/admin-login',(_, res) => res.sendFile(path.join(pub, 'admin-login.html')));
+
+app.get('/',           (_, res) => sendPage(res, 'index.html'));
+app.get('/login',      (_, res) => sendPage(res, 'login.html'));
+app.get('/checkout',   (_, res) => sendPage(res, 'checkout.html'));
+app.get('/dashboard',  (_, res) => sendPage(res, 'dashboard.html'));
+app.get('/register',   (_, res) => sendPage(res, 'register.html'));
+app.get('/admin',      (_, res) => sendPage(res, 'admin.html'));
+app.get('/admin-login',(_, res) => sendPage(res, 'admin-login.html'));
 
 app.use('/api', (_, res) => res.status(404).json({ error: 'not_found', message: 'Unknown endpoint.' }));
 

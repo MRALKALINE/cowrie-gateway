@@ -377,6 +377,16 @@ input,select,textarea{font-family:inherit}
 @media(max-width:520px){.formrow{grid-template-columns:1fr}}
 @media(max-width:420px){.vhdr h1{font-size:20px}.topbar-in{padding:11px 0}.brand{font-size:15px}.merchant-tag{max-width:96px;font-size:10px;padding:4px 8px}}
 @media(max-width:400px){.kpis{grid-template-columns:1fr}.kpi-tile .kv{font-size:19px}}
+
+/* Replaces inline onmouseover / onfocus handlers so the Content-Security-Policy
+   can forbid inline script. Hover and focus are presentation, not behaviour. */
+.hv-ink{transition:color .15s}
+.hv-ink:hover{color:var(--ink)!important}
+.hv-tile{transition:.15s}
+.hv-tile:hover{background:rgba(12,110,119,.12)!important;border-color:rgba(12,110,119,.3)!important}
+.hv-row{transition:.12s}
+.hv-row:hover{background:rgba(255,255,255,.07)!important}
+.fx-search:focus{border-color:rgba(12,110,119,.55)!important;box-shadow:0 0 0 3px rgba(12,110,119,.15)!important}
 </style>
 </head>
 <body>
@@ -407,14 +417,14 @@ input,select,textarea{font-family:inherit}
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div id="modeDropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:#091b22;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;min-width:180px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:999">
-            <div id="ddTest" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:.12s" onmouseenter="this.style.background='rgba(255,255,255,.07)'" onmouseleave="this.style.background=''">
+            <div id="ddTest" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:.12s" class="hv-row">
               <span style="width:7px;height:7px;border-radius:50%;background:#E0A12E;flex-shrink:0"></span>
               <div>
                 <div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:#E0A12E">Test mode</div>
                 <div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:1px">Simulated payments</div>
               </div>
             </div>
-            <div id="ddLive" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:.12s" onmouseenter="this.style.background='rgba(255,255,255,.07)'" onmouseleave="this.style.background=''">
+            <div id="ddLive" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:.12s" class="hv-row">
               <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0" id="ddLiveDot"></span>
               <div>
                 <div style="font-family:var(--mono);font-size:11.5px;font-weight:700" id="ddLiveLabel">Live mode</div>
@@ -645,6 +655,18 @@ function revenueFor(days, idx){
     label:  p.label,
   };
 }
+
+/* Copy buttons appear in several views, and one of them replaced an inline
+   onclick so the CSP can forbid inline script. Delegated from the document so
+   it covers whatever is rendered, whenever. */
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-copy]');
+  if(!b) return;
+  if(navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy).catch(()=>{});
+  const t=b.textContent;
+  b.textContent='Copied!';
+  setTimeout(()=>{ b.textContent=t; },1200);
+});
 
 /* ─── Contact support ─────────────────────────────────────────────────────
    A message thread rather than a live socket: an unanswered question has to
@@ -1105,7 +1127,7 @@ function plLinksTable(rows){
       <td data-label="Description" style="color:var(--ink-soft)">${esc(desc)}</td>
       <td data-label="Status">${statusTag(r.status)}</td>
       <td data-label="Created" style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${fmtDate(r.createdAt)}</td>
-      <td><button class="btn sm" onclick="navigator.clipboard.writeText('${url.replace(/'/g,'&#39;')}').then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},2000)})">Copy</button></td>
+      <td><button class="btn sm" data-copy="${esc(url)}">Copy</button></td>
     </tr>`;
   }).join('')}</tbody></table></div>`;
 }
@@ -1419,10 +1441,6 @@ async function renderApiKeys(el){
       this.textContent=show?'Show':'Hide';
     });
   }
-  document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
-    navigator.clipboard&&navigator.clipboard.writeText(b.dataset.copy).catch(()=>{});
-    const t=b.textContent;b.textContent='Copied!';setTimeout(()=>b.textContent=t,1200);
-  }));
   document.getElementById('saveWebsite').addEventListener('click',async()=>{
     const fb=document.getElementById('websiteFb');fb.className='fb';
     try{

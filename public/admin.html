@@ -454,6 +454,16 @@ input,select,textarea{font-family:inherit}
 @media(max-width:640px){.np-wrap{grid-template-columns:1fr}}
 @media(max-width:480px){.formrow{grid-template-columns:1fr}}
 @media(max-width:420px){.kpis{grid-template-columns:1fr}.kpi .v{font-size:20px}.panel-head{flex-wrap:wrap;row-gap:6px}.panel-head h2{flex:1;min-width:0}.vhdr h1{font-size:20px}.hdr h1{font-size:19px}.hdr{margin-bottom:14px;padding-bottom:14px}.topbar-in{padding:9px 0}.content{padding:12px;border-radius:12px}}
+
+/* Replaces inline onmouseover / onfocus handlers so the Content-Security-Policy
+   can forbid inline script. Hover and focus are presentation, not behaviour. */
+.hv-ink{transition:color .15s}
+.hv-ink:hover{color:var(--ink)!important}
+.hv-tile{transition:.15s}
+.hv-tile:hover{background:rgba(12,110,119,.12)!important;border-color:rgba(12,110,119,.3)!important}
+.hv-row{transition:.12s}
+.hv-row:hover{background:rgba(255,255,255,.07)!important}
+.fx-search:focus{border-color:rgba(12,110,119,.55)!important;box-shadow:0 0 0 3px rgba(12,110,119,.15)!important}
 </style>
 </head>
 <body>
@@ -545,7 +555,7 @@ input,select,textarea{font-family:inherit}
         <div class="hdr-actions">
           <div style="position:relative;display:flex;align-items:center">
             <svg style="position:absolute;left:10px;pointer-events:none;opacity:.4" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
-            <input id="globalSearch" type="search" placeholder="Search name or reference…" style="background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:9px;padding:7px 12px 7px 30px;color:var(--ink);font-family:var(--mono);font-size:12px;width:190px;outline:none;transition:.15s" onfocus="this.style.borderColor='rgba(12,110,119,.55)';this.style.boxShadow='0 0 0 3px rgba(12,110,119,.15)'" onblur="this.style.borderColor='';this.style.boxShadow=''">
+            <input id="globalSearch" class="fx-search" type="search" placeholder="Search name or reference…" style="background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:9px;padding:7px 12px 7px 30px;color:var(--ink);font-family:var(--mono);font-size:12px;width:190px;outline:none;transition:.15s">
           </div>
           <span class="badge" id="statusBadge">Loading…</span>
           <button class="btn" id="refreshBtn">↻ Refresh</button>
@@ -834,7 +844,7 @@ async function renderOverview(el){
     </div>
 
     <div class="r3d" style="display:flex;justify-content:flex-end;margin-bottom:10px;margin-top:-4px">
-      <button onclick="clearLiveRevenue()" style="font-family:var(--mono);font-size:11px;padding:7px 14px;background:rgba(239,106,76,.1);border:1px solid rgba(239,106,76,.3);color:var(--coral);border-radius:10px;cursor:pointer;letter-spacing:.03em">
+      <button id="clearLiveRevenueBtn" style="font-family:var(--mono);font-size:11px;padding:7px 14px;background:rgba(239,106,76,.1);border:1px solid rgba(239,106,76,.3);color:var(--coral);border-radius:10px;cursor:pointer;letter-spacing:.03em">
         ✕ Clear live revenue
       </button>
     </div>
@@ -857,6 +867,11 @@ async function renderOverview(el){
       </div>
       <div style="overflow:auto;">${txTable(transactions.slice(0,8),true)}</div>
     </div>`;
+
+  /* Bound here rather than an inline onclick, so the CSP can forbid
+     inline script. */
+  const clrBtn=document.getElementById('clearLiveRevenueBtn');
+  if(clrBtn) clrBtn.addEventListener('click',clearLiveRevenue);
 
   /* Period switch recomputes from buckets already in hand — no refetch. */
   const sel = document.getElementById('revPeriod');
@@ -1387,7 +1402,7 @@ async function renderMembers(el){
     el.innerHTML=`
       <div style="display:flex;flex-direction:column;gap:10px">
         ${sorted.map(m=>`
-          <button type="button" data-member-id="${esc(m.id)}" style="display:flex;align-items:center;gap:14px;width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px;padding:14px 16px;cursor:pointer;text-align:left;transition:.15s" onmouseover="this.style.background='rgba(12,110,119,.12)';this.style.borderColor='rgba(12,110,119,.3)'" onmouseout="this.style.background='rgba(255,255,255,.04)';this.style.borderColor='var(--line)'">
+          <button type="button" data-member-id="${esc(m.id)}" style="display:flex;align-items:center;gap:14px;width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px;padding:14px 16px;cursor:pointer;text-align:left;transition:.15s" class="hv-tile">
             <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--plum),var(--plum-br));display:grid;place-items:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0">${esc(initials(m.businessName))}</div>
             <div style="min-width:0;flex:1">
               <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.businessName)}</div>
@@ -1412,7 +1427,7 @@ async function renderMembers(el){
   async function showDetail(m){
     const successRate = m.totalTransactions>0 ? ((m.successfulTransactions/m.totalTransactions)*100).toFixed(0)+'%' : '—';
     el.innerHTML=`
-      <button id="mbBack" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;padding:0;margin-bottom:18px;transition:color .15s" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--muted)'">
+      <button id="mbBack" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;padding:0;margin-bottom:18px;transition:color .15s" class="hv-ink">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
         All members
       </button>
