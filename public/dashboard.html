@@ -668,6 +668,23 @@ document.addEventListener('click',e=>{
   setTimeout(()=>{ b.textContent=t; },1200);
 });
 
+/* Shown wherever a deactivated merchant would otherwise hit a wall. The
+   reason is the admin's own wording, passed through verbatim. `action` names
+   what they were trying to do, so the notice reads as an answer rather than a
+   generic warning. */
+function lockNotice(action){
+  if(!(M&&M.locked)) return '';
+  return `
+    <div style="background:rgba(239,106,76,.12);border:1px solid rgba(239,106,76,.35);border-radius:13px;padding:16px 20px;margin-bottom:18px;display:flex;align-items:flex-start;gap:13px">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#EF6A4C" stroke-width="2" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <div style="min-width:0">
+        <div style="font-weight:700;color:#EF6A4C;font-size:14px">Your account has been deactivated</div>
+        ${M.lockReason?`<div style="color:var(--ink-soft);font-size:13px;margin-top:5px;line-height:1.55">${esc(M.lockReason)}</div>`:''}
+        <div style="color:var(--muted);font-size:12px;margin-top:7px;line-height:1.5">${action?esc(action)+' is unavailable while your account is deactivated. ':''}You can still sign in and view your records. Contact support to resolve this.</div>
+      </div>
+    </div>`;
+}
+
 /* ─── Contact support ─────────────────────────────────────────────────────
    A message thread rather than a live socket: an unanswered question has to
    survive a restart and wait in a queue an admin works through. Polls while
@@ -842,17 +859,7 @@ async function renderOverview(el){
       <span><strong>Test mode</strong> — Transactions here are simulated and no real money moves. Switch to <strong>Live</strong> in the top bar to process real payments.</span>
     </div>`:'';
 
-  /* A deactivated merchant can sign in and read their records, but cannot
-     take payments. Lead with why, in the admin's own words. */
-  const lockBanner = M && M.locked ? `
-    <div style="background:rgba(239,106,76,.12);border:1px solid rgba(239,106,76,.35);border-radius:13px;padding:16px 20px;margin-bottom:18px;display:flex;align-items:flex-start;gap:13px">
-      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#EF6A4C" stroke-width="2" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      <div style="min-width:0">
-        <div style="font-weight:700;color:#EF6A4C;font-size:14px">Your account has been deactivated</div>
-        ${M.lockReason?`<div style="color:var(--ink-soft);font-size:13px;margin-top:5px;line-height:1.55">${esc(M.lockReason)}</div>`:''}
-        <div style="color:var(--muted);font-size:12px;margin-top:7px;line-height:1.5">You can still sign in and view your records, but cannot accept payments or request payouts. Contact support to resolve this.</div>
-      </div>
-    </div>` : '';
+  const lockBanner=lockNotice();
 
   el.innerHTML=`
     ${lockBanner}
@@ -1028,8 +1035,10 @@ function txRows(list){
 /* ─── Payment Links ─── */
 async function renderPaymentLinks(el){
   const {links} = await API.get('/api/payment-links');
+  const linksLocked = !!(M && M.locked);
   const ipt='width:100%;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:9px;padding:9px 12px;color:var(--ink);font-size:14px;box-sizing:border-box';
   el.innerHTML=`
+    ${lockNotice('Creating payment links')}
     <div class="panel r3d" style="margin-bottom:20px">
       <div class="panel-head"><h2>Generate payment link</h2></div>
       <div style="padding:18px;display:grid;gap:14px">
@@ -1147,7 +1156,10 @@ async function renderRequestPayout(el){
     .reduce((s,p)=>s+p.amount,0);
   const available=Math.max(0,grossCollected-paidOut);
 
+  const locked = !!(M && M.locked);
+
   el.innerHTML=`
+    ${lockNotice('Requesting a payout')}
     <div class="panel r3d" style="margin-bottom:16px">
       <div style="padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
         <div>
@@ -1218,6 +1230,14 @@ async function renderRequestPayout(el){
     f.value=(available/100).toFixed(2);
     f.focus();
   });
+  if(locked){
+    /* The server refuses this anyway; disabling the form means they are told
+       before filling it in rather than after. */
+    el.querySelectorAll('input,select,button').forEach(x=>{ x.disabled=true; });
+    const sb=document.getElementById('submitPayout');
+    if(sb) sb.textContent='Account deactivated';
+  }
+
   document.getElementById('tabBank').addEventListener('click',()=>setTab('bank'));
   document.getElementById('tabMomo').addEventListener('click',()=>setTab('mobile_money'));
 
