@@ -154,6 +154,15 @@ async function resolveMerchantByKey(req, res, next) {
     }
     if (!merchant) { const e = new Error('Invalid or missing API key'); e.status = 401; return next(e); }
     if (merchant.locked) { const e = new Error('This account has been locked.'); e.status = 403; return next(e); }
+    /* Live keys are issued at registration, and mode was taken purely from the
+       key prefix — so an unverified merchant could collect real money simply by
+       using their live key, bypassing the KYC gate the dashboard enforces on
+       the mode switch. Verification is the point at which a merchant is allowed
+       real funds, so it is checked here too. */
+    if (isLive && merchant.kycStatus !== 'approved') {
+      const e = new Error('Live payments require a verified account. Complete verification in your dashboard, or use your test keys.');
+      e.status = 403; return next(e);
+    }
     req.merchant = merchant;
     req.mode = isLive ? 'live' : 'test';
     next();
@@ -480,8 +489,23 @@ router.post('/charges', chargeLimiter, resolveMerchantByKey, ah(async (req, res)
 
 router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.charge.merchantId);
+  const c = req.charge;
+  /* A charge reference is a capability: it travels in URLs, browser history and
+     anywhere the payer forwards the link. Spreading the whole record handed
+     everyone holding one the payer's phone number and email, the gateway's
+     order ids, the merchant's metadata and the idempotency key. Only what the
+     checkout actually renders is returned. */
   res.json({ charge: {
-    ...req.charge,
+    reference: c.reference,
+    amount: c.amount,
+    currency: c.currency,
+    status: c.status,
+    method: c.method,
+    openAmount: !!c.openAmount,
+    callbackUrl: c.callbackUrl || null,
+    nalopayRef: c.nalopayRef || null,   // the checkout uses this to re-verify on return
+    failure: c.failure ? { message: c.failure.message } : null,
+    auth: c.auth ? { channel: c.auth.channel, network: c.auth.network, brand: c.auth.brand, last4: c.auth.last4 } : null,
     merchantName:    merchant ? merchant.businessName : 'KassifyPay',
     merchantWebsite: merchant ? (merchant.websiteUrl || null) : null,
   }});
@@ -944,8 +968,39 @@ router.get('/payouts', requireAuth, ah(async (req, res) => {
 
 router.post('/payouts', writeLimiter, requireAuth, requireActive, ah(async (req, res) => {
   const { amount, method, bank, accountNumber, accountName, mobileProvider, mobileNumber, note } = req.body || {};
-  const amt = Math.round(Number(amount));
-  if (!amt || amt <= 0) { const e = new Error('Enter a valid amount.'); e.status = 400; throw e; }
+
+  /* Validate before rounding: Math.round(Infinity) is Infinity, which passes a
+     bare `<= 0` test and is then serialised to null. */
+  const rawAmt = Number(amount);
+  if (!Number.isFinite(rawAmt) || rawAmt <= 0 || rawAmt > MAX_AMOUNT_MINOR) {
+    const e = new Error('Enter a valid amount.'); e.status = 400; throw e;
+  }
+  const amt = Math.round(rawAmt);
+
+  /* A payout was only checked for being positive — a merchant could request
+     any sum regardless of what they had actually collected, and the request
+     would sit in the admin queue looking exactly like a legitimate one. Cap it
+     at what is genuinely available: settled live revenue, less payouts already
+     completed, less anything already awaiting approval. */
+  const [ownCharges, ownPayouts, payoutRates] = await Promise.all([
+    store.charges.forMerchant(req.merchant.id),
+    store.payouts.forMerchant(req.merchant.id),
+    fx.getRates(),
+  ]);
+  const liveGross = ownCharges
+    .filter((c) => c.status === 'success' && (c.mode || 'test') === 'live')
+    .reduce((sum, c) => sum + fx.toGhsMinor(c.amount, c.currency, payoutRates), 0);
+  const alreadyOut = ownPayouts
+    .filter((pp) => ['completed', 'pending', 'processing'].includes(pp.status) && (pp.mode || 'test') === 'live')
+    .reduce((sum, pp) => sum + pp.amount, 0);
+  const availableToPayOut = Math.max(0, liveGross - alreadyOut);
+
+  if (amt > availableToPayOut) {
+    const e = new Error(
+      `You can request up to GHS ${(availableToPayOut / 100).toFixed(2)}. That is your collected balance less payouts already completed or awaiting approval.`,
+    );
+    e.status = 400; throw e;
+  }
   if (method === 'bank' && (!String(accountNumber || '').trim() || !String(accountName || '').trim())) {
     const e = new Error('Account number and account name are required for bank payouts.'); e.status = 400; throw e;
   }
