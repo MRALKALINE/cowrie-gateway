@@ -210,6 +210,7 @@ button{font-family:inherit;cursor:pointer}
     </div>
     <div class="co-timer" id="timer">14:59</div>
     <div class="co-amt"><span class="l" id="amtLbl">Pay</span><span class="v" id="amtV">₵ 250.00</span></div>
+    <div id="amtBreak" style="display:none;margin-top:7px;font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right"></div>
     <span class="testbadge"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> TEST MODE</span>
   </div>
   <div class="co-body" id="body"></div>
@@ -226,8 +227,25 @@ const $=s=>document.querySelector(s);
 const SYMS={GHS:'₵',NGN:'₦',KES:'KSh',ZAR:'R',USD:'$',EUR:'€',GBP:'£'};
 const fmt=(minor,ccy)=>(SYMS[ccy]||(ccy+' '))+' '+(minor/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const S={method:'card',step:'form',provider:'MTN',charge:null,bankDetail:null,ussdDetail:null,threeDsUrl:null,staticAccounts:[],payerName:''};
-const amount=()=>S.charge?S.charge.amount:0;
+/* amount() is what the payer pays — the merchant's amount plus the platform
+   fee. Every figure on this page quotes it, so the payer is never shown a
+   number smaller than what leaves their account. baseAmount/feeAmount are for
+   the breakdown under the total. */
+const amount=()=>{ if(!S.charge) return 0;
+  return Number.isFinite(S.charge.totalAmount)?S.charge.totalAmount:S.charge.amount; };
+const baseAmount=()=>S.charge?S.charge.amount:0;
+const feeAmount=()=>(S.charge&&S.charge.feeAmount)||0;
 const ccy=()=>S.charge?S.charge.currency:'GHS';
+/* Shown only when a fee actually applies, so a zero-fee charge is not
+   cluttered with a line saying nothing. */
+function renderAmountBreakdown(){
+  const el=document.getElementById('amtBreak');
+  if(!el) return;
+  const f=feeAmount();
+  if(!f){ el.style.display='none'; return; }
+  el.style.display='block';
+  el.innerHTML=`${fmt(baseAmount(),ccy())} + ${fmt(f,ccy())} fee`;
+}
 const merchantName=()=>(S.charge&&S.charge.merchantName)||'KassifyPay';
 function getMethods(){
   const c=ccy();
@@ -394,6 +412,7 @@ function render(){
     if(!_avail.some(([id])=>id===S.method)) S.method=_avail[0][0];
     $('#amtLbl').textContent='Pay '+merchantName();
     $('#amtV').textContent=fmt(amount(),ccy());
+    renderAmountBreakdown();
     const _nv=S.payerName?String(S.payerName).replace(/"/g,'&quot;'):'';
     b.innerHTML=tabs()+`<div class="field" style="margin-top:14px"><label>Full name</label><input id="payerName" type="text" placeholder="Name on your bank account or SIM" autocomplete="name" value="${_nv}"><div class="err" id="payerNameErr">Please enter your full name</div></div>`+formFor(S.method);
     b.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{

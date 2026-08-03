@@ -7,6 +7,7 @@ const nalopay = require('../lib/nalopay');
 const webhooks = require('../lib/webhooks');
 const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert, sendSupportMessageAlert, sendSupportReplyNotice } = require('../lib/email');
 const fx = require('../lib/fx');
+const fees = require('../lib/fees');
 const { toGhsMinor } = fx;
 const {
   merchantId, apiKey, genId, hashPassword, verifyPassword, signToken, verifyToken,
@@ -453,6 +454,9 @@ router.post('/charges/:reference/set-amount', payLimiter, loadCharge, ah(async (
     e.status = 400; throw e;
   }
   charge.amount = Math.round(major * 100);
+  /* An open-amount charge has no amount until now, so the fee is computed the
+     moment one is chosen. */
+  fees.applyFee(charge);
   charge.updatedAt = Date.now();
   charge.openAmount = false;
   await store.charges.update(charge);
@@ -497,7 +501,10 @@ router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
      checkout actually renders is returned. */
   res.json({ charge: {
     reference: c.reference,
-    amount: c.amount,
+    amount: c.amount,                       // what the merchant receives
+    feeAmount: c.feeAmount || 0,            // platform fee added on top
+    totalAmount: fees.payableAmount(c),     // what the payer is charged
+    feeBps: c.feeBps || 0,
     currency: c.currency,
     status: c.status,
     method: c.method,
@@ -1343,7 +1350,9 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
       accountNumber: account,
       accountName: charge.payerName || 'Customer',
       network,
-      amountMinor: charge.amount,
+      /* The payer is charged the total — the merchant's amount plus the
+         platform fee. charge.amount stays what the merchant receives. */
+      amountMinor: fees.payableAmount(charge),
       reference: attemptRef,
       callbackUrl: nalopayCallbackUrl(req),
       description: `KassifyPay ${charge.reference}`,
@@ -1382,13 +1391,13 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
       products: [{
         name: `Payment ${charge.reference}`,
         count: 1,
-        price: nalopay.toMajor(charge.amount),
+        price: nalopay.toMajor(fees.payableAmount(charge)),
         /* Only path back to our charge — checkout callbacks echo the summary,
            not the arbitrary extra_data that collections return. */
         metadata: { cowrie_reference: charge.reference },
       }],
       itemCount: 1,
-      totalMinor: charge.amount,
+      totalMinor: fees.payableAmount(charge),
     });
     console.log('[Nalopay /checkout]', JSON.stringify({ ok: !!data.success, code: data.code, http: data.httpStatus }));
     if (!data.success || !data.data || !data.data.checkout_url) {
