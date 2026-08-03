@@ -744,6 +744,16 @@ async function renderOverview(el){
         <div class="t ok">● Live · ${overview.collectedTodayCount||0} payment${(overview.collectedTodayCount||0)!==1?'s':''} since midnight</div>
       </div>
       <div class="kpi r3d">
+        <div class="l">Total revenue</div>
+        <div class="v">${fmt(overview.grossCollected||0)}</div>
+        <div class="t ok">● Live · ${overview.liveCount||0} payment${(overview.liveCount||0)!==1?'s':''} all time</div>
+      </div>
+      <div class="kpi r3d">
+        <div class="l">Currently held</div>
+        <div class="v">${fmt(overview.totalCollected||0)}</div>
+        <div class="t ok">● After ${fmt(overview.totalPaidOut||0)} paid out</div>
+      </div>
+      <div class="kpi r3d">
         <div class="l">Registered merchants</div>
         <div class="v">${overview.merchantCount}</div>
         <div class="t ok">● All time</div>

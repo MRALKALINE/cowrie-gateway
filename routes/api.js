@@ -573,7 +573,18 @@ router.get('/admin/overview', requireAdminAuth, ah(async (req, res) => {
   const byMethod = {};
   successAll.forEach((c) => { const m = c.method || 'unknown'; byMethod[m] = (byMethod[m] || 0) + toGhs(c.amount, c.currency); });
 
-  res.json({ overview: { collectedToday, collectedTodayCount, paidOutToday, totalCollected, testCollected, merchantCount, successRate, pendingCount, last7Days, byMethod } });
+  /* grossCollected is all-time live revenue before payouts; totalCollected is
+     what remains after them. Both are useful and they answer different
+     questions — "how much has this gateway processed" versus "how much is
+     still held" — so return both rather than only the net figure. */
+  res.json({
+    overview: {
+      collectedToday, collectedTodayCount, paidOutToday,
+      grossCollected, totalPaidOut, liveCount: liveSuccess.length,
+      totalCollected, testCollected, merchantCount, successRate, pendingCount,
+      last7Days, byMethod,
+    },
+  });
 }));
 
 router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
