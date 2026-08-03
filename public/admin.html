@@ -889,7 +889,12 @@ async function renderSupport(el){
 }
 
 async function openThread(merchantId){
-  const el=document.getElementById('vc')||document.getElementById('main');
+  /* The admin console renders every view into #viewContent. This previously
+     looked for #vc, which is the merchant dashboard's container and does not
+     exist here — so el was null, setting innerHTML threw, and clicking a
+     conversation silently did nothing. */
+  const el=document.getElementById('viewContent');
+  if(!el) return;
   const {messages,merchant}=await API.get(`/api/admin/support/${encodeURIComponent(merchantId)}`);
   await refreshSupportBadge();
 
@@ -2206,7 +2211,9 @@ function reveal3d(container){
    they stayed at opacity:0 and mid-transform — invisible, and displaced on a
    phone. Watching the view container catches every panel however it arrived. */
 function watchReveals(){
-  const root=document.getElementById('main');
+  /* #viewContent, not #main — the admin console has no #main, so this observer
+     was silently never attached and the reveal fix never applied here. */
+  const root=document.getElementById('viewContent');
   if(!root||!window.MutationObserver)return;
   new MutationObserver(muts=>{
     const fresh=[];
