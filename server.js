@@ -92,7 +92,10 @@ app.get(/\.html$/, (req, res, next) => {
   if (!htmlCache.has(name) && !fs.existsSync(path.join(pub, name))) return next();
   sendPage(res, name);
 });
-app.use(express.static(pub));
+/* index:false — otherwise express.static answers "/" with index.html straight
+   off disk, before the route below runs, and the page arrives without a nonce
+   so its script is refused. */
+app.use(express.static(pub, { index: false }));
 
 app.get('/',           (_, res) => sendPage(res, 'index.html'));
 app.get('/login',      (_, res) => sendPage(res, 'login.html'));
