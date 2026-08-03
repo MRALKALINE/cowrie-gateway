@@ -118,6 +118,52 @@ input,select,textarea{font-family:inherit}
   box-shadow:0 8px 32px rgba(0,0,0,.4),0 0 0 1px rgba(12,110,119,.08) inset;
 }
 .side-title{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;padding-left:10px}
+/* ─── Support chat ─────────────────────────────────────────────────────────
+   Real classes rather than inline styles: bubbles, day separators, an avatar
+   per side and a composer that grows with the message. */
+.chat-wrap{display:flex;flex-direction:column;height:min(58vh,520px)}
+.chat-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 18px 8px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(12,110,119,.07), transparent 42%),
+    radial-gradient(circle at 82% 92%, rgba(224,161,46,.05), transparent 42%);
+}
+.chat-day{display:flex;align-items:center;gap:12px;margin:14px 0 16px}
+.chat-day::before,.chat-day::after{content:'';flex:1;height:1px;background:var(--line-2)}
+.chat-day span{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  background:rgba(255,255,255,.05);border:1px solid var(--line-2);padding:3px 10px;border-radius:20px;white-space:nowrap}
+.chat-row{display:flex;gap:9px;margin-bottom:12px;align-items:flex-end}
+.chat-row.mine{flex-direction:row-reverse}
+.chat-av{width:27px;height:27px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.02em;
+  background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--muted)}
+.chat-row.mine .chat-av{background:linear-gradient(135deg,var(--plum),var(--plum-br));border-color:transparent;color:#fff}
+.chat-bub{max-width:min(78%,460px);padding:10px 13px 8px;border-radius:15px;font-size:13.5px;line-height:1.55;
+  white-space:pre-wrap;word-break:break-word;position:relative;
+  background:rgba(255,255,255,.055);border:1px solid var(--line);border-bottom-left-radius:5px;
+  box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.chat-row.mine .chat-bub{background:rgba(12,110,119,.26);border-color:rgba(12,110,119,.45);
+  border-bottom-left-radius:15px;border-bottom-right-radius:5px}
+.chat-meta{display:block;margin-top:5px;font-family:var(--mono);font-size:9.5px;color:var(--muted);text-align:right}
+.chat-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;padding:26px 20px;gap:11px}
+.chat-empty .ic{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(12,110,119,.15);border:1px solid rgba(12,110,119,.3)}
+.chat-empty h4{font-family:var(--display);font-size:15.5px;font-weight:700;color:var(--ink)}
+.chat-empty p{font-size:12.5px;color:var(--muted);max-width:290px;line-height:1.6}
+.chat-compose{border-top:1px solid var(--line-2);padding:12px 14px;display:flex;gap:9px;align-items:flex-end;background:rgba(255,255,255,.02)}
+.chat-compose textarea{flex:1;min-height:42px;max-height:140px;resize:none;overflow-y:auto;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:13px;padding:11px 13px;
+  color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.5;outline:none;transition:.15s}
+.chat-compose textarea:focus{border-color:rgba(12,110,119,.6);box-shadow:0 0 0 3px rgba(12,110,119,.15)}
+.chat-send{width:42px;height:42px;flex-shrink:0;border-radius:50%;border:0;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--plum),var(--plum-br));color:#fff;transition:.15s}
+.chat-send:disabled{opacity:.45}
+.chat-send:not(:disabled):active{transform:scale(.94)}
+.chat-hint{font-size:11px;color:var(--muted);padding:0 15px 11px}
+@media(max-width:640px){
+  .chat-wrap{height:min(64vh,560px)}
+  .chat-bub{max-width:84%}
+  .chat-scroll{padding:14px 13px 6px}
+}
 .nav{display:flex;flex-direction:column;gap:3px}
 .nav a{padding:9px 10px;border-radius:11px;border:1px solid transparent;color:var(--ink-soft);font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px;transition:.15s}
 .nav a:hover{background:rgba(255,255,255,.06);border-color:var(--line);color:var(--ink)}
@@ -829,19 +875,35 @@ async function renderOverview(el){
    the merchant's messages read, which is what clears the badge. */
 let _supAdminPoll=null;
 
-function supAdminBubble(m){
-  const fromAdmin=m.from==='admin';
-  return `<div style="display:flex;justify-content:${fromAdmin?'flex-end':'flex-start'};margin-bottom:10px">
-    <div style="max-width:78%;padding:11px 14px;border-radius:14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
-      background:${fromAdmin?'rgba(12,110,119,.22)':'rgba(255,255,255,.06)'};
-      border:1px solid ${fromAdmin?'rgba(12,110,119,.4)':'var(--line)'};
-      border-bottom-${fromAdmin?'right':'left'}-radius:5px">
-      <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:5px">
-        ${fromAdmin?esc(m.authorEmail||'Support'):'Merchant'} · ${fmtDate(m.createdAt)}
-      </div>
-      ${esc(m.body)}
-    </div>
+const supInitials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase()||'?';
+
+function supDayLabel(ts){
+  const d=new Date(ts); d.setHours(0,0,0,0);
+  const today=new Date(); today.setHours(0,0,0,0);
+  const diff=Math.round((today-d)/86400000);
+  if(diff===0) return 'Today';
+  if(diff===1) return 'Yesterday';
+  return new Date(ts).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+}
+const supTime=ts=>new Date(ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+
+/* Grouped by day so a long thread reads as a conversation, not a list. */
+function supRenderAdmin(messages,merchantName){
+  if(!messages.length) return `<div class="chat-empty">
+    <div class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#8FE3EC" stroke-width="1.8"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg></div>
+    <h4>No messages</h4><p>This conversation is empty.</p>
   </div>`;
+  let html='',lastDay='';
+  for(const m of messages){
+    const day=supDayLabel(m.createdAt);
+    if(day!==lastDay){ html+=`<div class="chat-day"><span>${esc(day)}</span></div>`; lastDay=day; }
+    const mine=m.from==='admin';
+    html+=`<div class="chat-row${mine?' mine':''}">
+      <div class="chat-av">${mine?'KP':esc(supInitials(merchantName))}</div>
+      <div class="chat-bub">${esc(m.body)}<span class="chat-meta">${supTime(m.createdAt)}</span></div>
+    </div>`;
+  }
+  return html;
 }
 
 async function refreshSupportBadge(){
@@ -868,17 +930,18 @@ async function renderSupport(el){
       <div class="panel-head"><h2>Conversations</h2><span class="badge">${threads.filter(t=>t.unread>0).length} unanswered</span></div>
       <div style="padding:8px">
         ${threads.map(t=>`
-          <button type="button" data-thread="${esc(t.merchantId)}" style="display:flex;align-items:flex-start;gap:12px;width:100%;background:${t.unread?'rgba(239,106,76,.07)':'transparent'};border:1px solid ${t.unread?'rgba(239,106,76,.22)':'var(--line-2)'};border-radius:12px;padding:13px 15px;margin-bottom:7px;text-align:left;cursor:pointer;color:inherit">
+          <button type="button" data-thread="${esc(t.merchantId)}" style="display:flex;align-items:center;gap:12px;width:100%;background:${t.unread?'rgba(239,106,76,.07)':'transparent'};border:1px solid ${t.unread?'rgba(239,106,76,.22)':'var(--line-2)'};border-radius:13px;padding:12px 14px;margin-bottom:7px;text-align:left;cursor:pointer;color:inherit;transition:.15s">
+            <div class="chat-av" style="width:34px;height:34px;font-size:11px">${esc(supInitials(t.businessName))}</div>
             <div style="flex:1;min-width:0">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-weight:700;font-size:14px">${esc(t.businessName)}</span>
                 ${t.unread?`<span style="background:#EF6A4C;color:#fff;font-family:var(--mono);font-size:9px;font-weight:700;padding:1px 6px;border-radius:9px">${t.unread} new</span>`:''}
               </div>
-              <div style="font-size:12.5px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              <div style="font-size:12.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                 ${t.lastFrom==='admin'?'You: ':''}${esc(t.lastBody)}
               </div>
             </div>
-            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0">${fmtDate(t.lastAt)}</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0">${supDayLabel(t.lastAt)}</div>
           </button>`).join('')}
       </div>
     </div>`;
@@ -889,54 +952,70 @@ async function renderSupport(el){
 }
 
 async function openThread(merchantId){
-  /* The admin console renders every view into #viewContent. This previously
-     looked for #vc, which is the merchant dashboard's container and does not
-     exist here — so el was null, setting innerHTML threw, and clicking a
-     conversation silently did nothing. */
+  /* The admin console renders every view into #viewContent. */
   const el=document.getElementById('viewContent');
   if(!el) return;
   const {messages,merchant}=await API.get(`/api/admin/support/${encodeURIComponent(merchantId)}`);
   await refreshSupportBadge();
+  const name=merchant?merchant.businessName:'Deleted merchant';
 
   el.innerHTML=`
     <button class="btn sm" id="supBack" style="margin-bottom:14px">← All conversations</button>
     <div class="panel r3d">
       <div class="panel-head">
-        <h2>${esc(merchant?merchant.businessName:'Deleted merchant')}</h2>
-        <span class="badge">${esc(merchant&&merchant.email?merchant.email:'—')}</span>
-      </div>
-      <div id="supAdminThread" style="padding:18px;max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
-        ${messages.map(supAdminBubble).join('')}
-      </div>
-      <div style="padding:16px 18px;border-top:1px solid var(--line-2)">
-        <textarea id="supReply" rows="3" placeholder="Write a reply — the merchant is emailed a copy." style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:11px;padding:11px 13px;color:var(--ink);font-family:var(--body);font-size:14px;resize:vertical;outline:none"></textarea>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
-          <button class="btn primary" id="supSendReply" style="padding:10px 20px;border-radius:11px">Send reply</button>
-          <span id="supReplyFb" style="font-size:12.5px"></span>
+        <h2>${esc(name)}</h2>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge">${esc(merchant&&merchant.email?merchant.email:'—')}</span>
+          <button class="btn sm" id="supClearThread" ${messages.length?'':'disabled'} style="color:#EF6A4C;border-color:rgba(239,106,76,.3)">Clear</button>
         </div>
+      </div>
+      <div class="chat-wrap">
+        <div class="chat-scroll" id="supAdminThread">${supRenderAdmin(messages,name)}</div>
+        <div class="chat-compose">
+          <textarea id="supReply" rows="1" placeholder="Write a reply…"></textarea>
+          <button class="chat-send" id="supSendReply" aria-label="Send reply">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </div>
+        <div class="chat-hint" id="supReplyFb">Enter sends · Shift + Enter for a new line · the merchant is emailed a copy</div>
       </div>
     </div>`;
 
   const box=document.getElementById('supAdminThread');
+  const ta=document.getElementById('supReply');
+  const fb=document.getElementById('supReplyFb');
   box.scrollTop=box.scrollHeight;
-  document.getElementById('supBack').addEventListener('click',()=>loadView('support'));
 
-  document.getElementById('supSendReply').addEventListener('click',async()=>{
-    const ta=document.getElementById('supReply');
-    const fb=document.getElementById('supReplyFb');
+  const grow=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; };
+  ta.addEventListener('input',grow);
+
+  const send=async()=>{
     const body=ta.value.trim();
     if(!body){ fb.textContent='Type a reply first.'; fb.style.color='#EF6A4C'; return; }
     const btn=document.getElementById('supSendReply');
-    btn.disabled=true; btn.textContent='Sending…';
+    btn.disabled=true;
     try{
       await API.post(`/api/admin/support/${encodeURIComponent(merchantId)}`,{body});
-      ta.value='';
+      ta.value=''; grow();
       const {messages:fresh}=await API.get(`/api/admin/support/${encodeURIComponent(merchantId)}`);
-      box.innerHTML=fresh.map(supAdminBubble).join('');
+      box.innerHTML=supRenderAdmin(fresh,name);
       box.scrollTop=box.scrollHeight;
-      fb.textContent='Sent — the merchant has been emailed.'; fb.style.color='#1FA877';
+      fb.textContent='Sent — the merchant has been emailed.'; fb.style.color='';
     }catch(e){ fb.textContent=e.message||'Could not send.'; fb.style.color='#EF6A4C'; }
-    finally{ btn.disabled=false; btn.textContent='Send reply'; }
+    finally{ btn.disabled=false; ta.focus(); }
+  };
+  document.getElementById('supSendReply').addEventListener('click',send);
+  ta.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); }
+  });
+
+  document.getElementById('supClearThread').addEventListener('click',async()=>{
+    if(!confirm('Clear this conversation?' + String.fromCharCode(10,10) +
+      'This removes every message for you and for the merchant. It cannot be undone.')) return;
+    try{
+      await API.delete(`/api/admin/support/${encodeURIComponent(merchantId)}`);
+      loadView('support');
+    }catch(e){ fb.textContent=e.message||'Could not clear.'; fb.style.color='#EF6A4C'; }
   });
 }
 

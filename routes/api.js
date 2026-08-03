@@ -733,6 +733,14 @@ router.post('/support', requireAuth, ah(async (req, res) => {
   res.status(201).json({ message: msg });
 }));
 
+/* Clearing removes the thread for both sides — there is one conversation, not
+   a copy each. Both UIs say so before asking for confirmation. */
+router.delete('/support', requireAuth, ah(async (req, res) => {
+  const before = (await store.support.forMerchant(req.merchant.id)).length;
+  await store.support.clearForMerchant(req.merchant.id);
+  res.json({ ok: true, cleared: before });
+}));
+
 /* ── admin ── */
 router.get('/admin/support', requireAdminAuth, ah(async (req, res) => {
   const [all, merchants] = await Promise.all([store.support.all(), store.merchants.all()]);
@@ -762,6 +770,13 @@ router.get('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) =
     messages,
     merchant: merchant ? { id: merchant.id, businessName: merchant.businessName, email: merchant.email, locked: !!merchant.locked } : null,
   });
+}));
+
+router.delete('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) => {
+  const before = (await store.support.forMerchant(req.params.merchantId)).length;
+  await store.support.clearForMerchant(req.params.merchantId);
+  console.warn(`[admin] ${req.adminEmail} cleared the support thread for ${req.params.merchantId} (${before} messages)`);
+  res.json({ ok: true, cleared: before });
 }));
 
 router.post('/admin/support/:merchantId', requireAdminAuth, ah(async (req, res) => {
