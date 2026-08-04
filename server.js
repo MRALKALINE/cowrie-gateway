@@ -6,6 +6,7 @@ const express = require('express');
 const store = require('./lib/store');
 const cfg = require('./lib/config');
 const api = require('./routes/api');
+const partnerLink = require('./routes/partner-link');
 const { migrate } = require('./lib/migrate');
 const { apiKey } = require('./lib/util');
 const { seedAdmins } = require('./lib/admins');
@@ -64,6 +65,11 @@ app.use(express.json({ limit: '256kb', verify: keepRaw }));
 app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 
 app.use('/api', api);
+
+/* Hosted partner links live at the root — /p/<code> — because they are shared
+   by hand and read aloud. Mounted ahead of the static handler so a partner
+   code can never be shadowed by a file of the same name. */
+app.use('/p', partnerLink);
 
 const pub = path.join(__dirname, 'public');
 

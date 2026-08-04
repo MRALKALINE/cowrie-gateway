@@ -8,6 +8,7 @@ const webhooks = require('../lib/webhooks');
 const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert, sendSupportMessageAlert, sendSupportReplyNotice } = require('../lib/email');
 const fx = require('../lib/fx');
 const fees = require('../lib/fees');
+const partners = require('../lib/partners');
 const { toGhsMinor } = fx;
 const {
   merchantId, apiKey, genId, hashPassword, verifyPassword, signToken, verifyToken,
@@ -41,27 +42,10 @@ async function adminEmails() {
     .filter((e) => DELIVERABLE.test(e) && !e.endsWith('.local'));
 }
 
-/* ── rate limiters ── */
-function rateLimit({ windowMs, max }) {
-  const hits = new Map();
-  // Prune expired entries every 5 min to prevent unbounded Map growth
-  setInterval(() => {
-    const now = Date.now();
-    for (const [k, e] of hits) if (now > e.reset) hits.delete(k);
-  }, 5 * 60_000).unref();
-
-  return (req, res, next) => {
-    const key = req.ip; const now = Date.now();
-    const entry = hits.get(key) || { count: 0, reset: now + windowMs };
-    if (now > entry.reset) { entry.count = 0; entry.reset = now + windowMs; }
-    entry.count += 1; hits.set(key, entry);
-    if (entry.count > max) {
-      res.setHeader('Retry-After', Math.ceil((entry.reset - now) / 1000));
-      const e = new Error('Too many requests, slow down.'); e.status = 429; return next(e);
-    }
-    next();
-  };
-}
+/* ── rate limiters ──
+   The implementation lives in lib/ratelimit so the hosted partner links, which
+   are routed outside /api, are capped by the same one. */
+const { rateLimit } = require('../lib/ratelimit');
 const globalLimiter = rateLimit({ windowMs: 60_000, max: 200 }); // all routes
 const authLimiter   = rateLimit({ windowMs: 60_000, max: 10  }); // login / register
 const chargeLimiter = rateLimit({ windowMs: 60_000, max: 60  }); // charge creation
@@ -459,6 +443,9 @@ router.post('/charges/:reference/set-amount', payLimiter, loadCharge, ah(async (
      not whatever the merchant's rate happens to be by the time the payer
      types a figure. */
   fees.applyFee(charge, charge.feeBps);
+  /* The commission was nil while the amount was, so it is worked out at the
+     rate attached when the link was followed. */
+  partners.recompute(charge);
   charge.updatedAt = Date.now();
   charge.openAmount = false;
   await store.charges.update(charge);
@@ -490,6 +477,23 @@ router.post('/charges', chargeLimiter, resolveMerchantByKey, ah(async (req, res)
     }
     throw err;
   }
+  /* A deposit brought in by a partner is tagged here, so the merchant only
+     has to append their partner's code to a call they already make.
+
+     An unrecognised code does not fail the deposit — losing a real payment to
+     a typo would be far worse than losing the attribution — but it is recorded
+     so it shows up in the console instead of vanishing. */
+  const code = (req.body && (req.body.partner || req.body.ref)) || req.query.ref;
+  if (code) {
+    const partner = partners.byCode(req.merchant, code);
+    if (partner && partner.active !== false) {
+      partners.attach(charge, partner);
+    } else {
+      charge.partnerCodeUnknown = partners.normaliseCode(code);
+    }
+    await store.charges.update(charge);
+  }
+
   res.status(201).json({ charge, checkout_url: checkoutUrlFor(req, charge) });
 }));
 
@@ -903,6 +907,148 @@ router.delete('/admin/members/:merchantId', writeLimiter, requireAdminAuth, ah(a
     ok: true,
     deleted: { merchantId: merchant.id, businessName: merchant.businessName, charges: charges.length, payouts: payouts.length },
   });
+}));
+
+/* ═══════════════════════ Partners ═══════════════════════════════════════
+   People who bring deposits to a merchant and take a share of what they bring.
+   Managed by an admin, because the commission is money leaving the merchant
+   and should not be self-serve.
+
+   Revenue is counted from successful live deposits only, matching every other
+   revenue figure in the console — a pending deposit has not been paid and is
+   reported separately so it is visible without being counted. */
+
+async function partnerReport(merchant) {
+  const charges = await store.charges.forMerchant(merchant.id);
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const todayStart = midnight.getTime();
+  const live = charges.filter((c) => (c.mode || 'test') === 'live');
+
+  const rows = partners.list(merchant).map((p) => {
+    const mine = live.filter((c) => c.partnerId === p.id);
+    const paid = mine.filter((c) => c.status === 'success');
+    const today = paid.filter((c) => (c.paidAt || c.createdAt) >= todayStart);
+
+    /* Seven separate days, newest first — the same shape the revenue panel
+       uses, so a partner's week reads the same way as the platform's. */
+    const byDay = [];
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(); dd.setHours(0, 0, 0, 0); dd.setDate(dd.getDate() - i);
+      const start = dd.getTime();
+      const inDay = paid.filter((c) => {
+        const at = c.paidAt || c.createdAt;
+        return at >= start && at < start + 86_400_000;
+      });
+      byDay.push({
+        date: dd.toISOString().slice(0, 10),
+        label: dd.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+        volume: inDay.reduce((s, c) => s + (c.amount || 0), 0),
+        commission: inDay.reduce((s, c) => s + (c.partnerCommission || 0), 0),
+        count: inDay.length,
+      });
+    }
+
+    return {
+      ...p,
+      deposits: paid.length,
+      volume: paid.reduce((s, c) => s + (c.amount || 0), 0),
+      commission: paid.reduce((s, c) => s + (c.partnerCommission || 0), 0),
+      todayVolume: today.reduce((s, c) => s + (c.amount || 0), 0),
+      todayCommission: today.reduce((s, c) => s + (c.partnerCommission || 0), 0),
+      todayDeposits: today.length,
+      pending: mine.filter((c) => c.status === 'pending').length,
+      lastDepositAt: paid.length ? Math.max(...paid.map((c) => c.paidAt || c.createdAt)) : null,
+      byDay,
+    };
+  });
+
+  /* Deposits that arrived carrying a code nobody recognises. Silent otherwise,
+     and silence here means somebody is not being paid. */
+  const unknown = {};
+  live.filter((c) => c.partnerCodeUnknown && c.status === 'success')
+    .forEach((c) => { unknown[c.partnerCodeUnknown] = (unknown[c.partnerCodeUnknown] || 0) + 1; });
+
+  return {
+    partners: rows.sort((a, b) => b.commission - a.commission),
+    unknownCodes: Object.entries(unknown).map(([code, count]) => ({ code, count })),
+    unattributed: live.filter((c) => c.status === 'success' && !c.partnerId).length,
+  };
+}
+
+router.get('/admin/members/:merchantId/partners', requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+  res.json(await partnerReport(merchant));
+}));
+
+router.post('/admin/members/:merchantId/partners', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 80);
+  if (name.length < 2) { const e = new Error('Give the partner a name.'); e.status = 400; throw e; }
+
+  const bps = Number(req.body && req.body.commissionBps);
+  if (!Number.isFinite(bps) || bps < 0 || bps > partners.MAX_COMMISSION_BPS) {
+    const e = new Error('Commission must be between 0% and 50%.'); e.status = 400; throw e;
+  }
+
+  /* Codes are unique across every merchant: a hosted link carries nothing but
+     the code, so a clash would send deposits to the wrong business. */
+  const all = await store.merchants.all();
+  const code = partners.uniqueCode(all, req.body && req.body.code, name);
+
+  merchant.partners = partners.list(merchant).concat([{
+    id: genId('ptr_'),
+    name,
+    code,
+    commissionBps: Math.round(bps),
+    active: true,
+    createdAt: Date.now(),
+    createdBy: req.adminEmail || null,
+  }]);
+  await store.merchants.update(merchant);
+  res.status(201).json(await partnerReport(merchant));
+}));
+
+router.put('/admin/members/:merchantId/partners/:partnerId', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+  const partner = partners.byId(merchant, req.params.partnerId);
+  if (!partner) { const e = new Error('Partner not found.'); e.status = 404; throw e; }
+
+  const b = req.body || {};
+  if (b.name !== undefined) {
+    const name = String(b.name).trim().slice(0, 80);
+    if (name.length < 2) { const e = new Error('Give the partner a name.'); e.status = 400; throw e; }
+    partner.name = name;
+  }
+  if (b.commissionBps !== undefined) {
+    const bps = Number(b.commissionBps);
+    if (!Number.isFinite(bps) || bps < 0 || bps > partners.MAX_COMMISSION_BPS) {
+      const e = new Error('Commission must be between 0% and 50%.'); e.status = 400; throw e;
+    }
+    /* Only deposits from here on use the new rate. Every deposit already
+       carries the rate it was taken at, so nothing already earned moves. */
+    partner.commissionBps = Math.round(bps);
+  }
+  if (b.active !== undefined) partner.active = Boolean(b.active);
+
+  merchant.partners = partners.list(merchant).map((x) => (x.id === partner.id ? partner : x));
+  await store.merchants.update(merchant);
+  res.json(await partnerReport(merchant));
+}));
+
+/* Removing a partner does not touch their deposits: those are the merchant's
+   revenue and stay exactly where they are. What is lost is the link and any
+   further attribution, which is why the deposits already recorded keep the
+   partner's name on them. */
+router.delete('/admin/members/:merchantId/partners/:partnerId', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+  merchant.partners = partners.list(merchant).filter((p) => p.id !== req.params.partnerId);
+  await store.merchants.update(merchant);
+  res.json(await partnerReport(merchant));
 }));
 
 /* Sets one merchant's fee rate, or clears it back to the platform default.

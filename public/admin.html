@@ -1583,6 +1583,8 @@ async function renderMembers(el){
         <div id="mbFeeHint" style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:9px;line-height:1.55"></div>
       </div>
 
+      <div id="mbPartners" style="margin-bottom:16px"></div>
+
       <div style="margin-bottom:16px">
         <button id="mbLockBtn" style="width:100%;min-height:46px;padding:12px 18px;border-radius:12px;font-family:var(--display);font-weight:700;font-size:14px;cursor:pointer;border:1.5px solid ${m.locked?'rgba(31,168,119,.4)':'rgba(239,106,76,.4)'};background:${m.locked?'rgba(31,168,119,.12)':'rgba(239,106,76,.12)'};color:${m.locked?'var(--mint)':'#EF6A4C'}">
           ${m.locked?'🔓 Unlock account':'🔒 Lock account'}
@@ -1652,6 +1654,159 @@ async function renderMembers(el){
       if(bps === null){ feeInput.focus(); return; }
       saveFee(bps, document.getElementById('mbFeeSave'), 'Saving\u2026');
     });
+
+
+    /* ── Partners ──
+       Only shown where a merchant actually has them, plus a quiet way to add
+       the first one. A merchant with no partners gets a single line, not an
+       empty table. */
+    const pWrap = document.getElementById('mbPartners');
+
+    function sparkline(byDay){
+      const days = (byDay||[]).slice().reverse();          // oldest -> newest, left to right
+      const peak = Math.max(1, ...days.map(d=>d.commission||0));
+      return '<div style="display:flex;align-items:flex-end;gap:3px;height:26px">' + days.map(d=>{
+        const h = Math.max(2, Math.round(((d.commission||0)/peak)*26));
+        return '<div title="' + esc(d.label) + ' — ' + fmt(d.commission||0) + '" style="width:9px;height:' + h + 'px;border-radius:2px;background:' + ((d.commission||0)?'var(--mint)':'rgba(255,255,255,.09)') + '"></div>';
+      }).join('') + '</div>';
+    }
+
+    function partnerCard(p){
+      const link = location.origin + '/p/' + p.code;
+      const off  = p.active === false;
+      return `
+        <div style="border:1px solid ${off?'var(--line)':'rgba(31,168,119,.25)'};background:${off?'rgba(255,255,255,.02)':'rgba(31,168,119,.06)'};border-radius:14px;padding:14px 16px;${off?'opacity:.6':''}">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="font-weight:800;font-size:14.5px;flex:1;min-width:0">${esc(p.name)}${off?' <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">· off</span>':''}</div>
+            <div style="font-family:var(--mono);font-size:12px;font-weight:800;color:var(--mint);background:rgba(31,168,119,.14);border:1px solid rgba(31,168,119,.3);padding:2px 8px;border-radius:6px">${(p.commissionBps/100)}%</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+            <code style="flex:1;min-width:0;font-family:var(--mono);font-size:11px;color:var(--ink-soft);background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:9px;padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(link)}</code>
+            <button class="btn sm" data-copy="${esc(link)}" style="flex-shrink:0;min-height:36px">Copy</button>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;align-items:end">
+            <div>
+              <div style="font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">They earned</div>
+              <div style="font-family:var(--mono);font-weight:800;font-size:16px;color:var(--mint);margin-top:3px">${fmt(p.commission||0)}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Deposits brought</div>
+              <div style="font-family:var(--mono);font-weight:700;font-size:14px;margin-top:3px">${fmt(p.volume||0)}</div>
+              <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">${p.deposits||0} deposit${(p.deposits||0)!==1?'s':''}${p.pending?' · '+p.pending+' pending':''}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Today</div>
+              <div style="font-family:var(--mono);font-weight:700;font-size:14px;color:var(--gold);margin-top:3px">${fmt(p.todayCommission||0)}</div>
+              <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">from ${fmt(p.todayVolume||0)}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Last 7 days</div>
+              ${sparkline(p.byDay)}
+            </div>
+          </div>
+
+          <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
+            <button class="btn sm" data-prate="${esc(p.id)}" style="min-height:34px">Change rate</button>
+            <button class="btn sm" data-ptoggle="${esc(p.id)}" style="min-height:34px">${off?'Switch on':'Switch off'}</button>
+            <button class="btn sm" data-pdel="${esc(p.id)}" style="min-height:34px;color:var(--coral);border-color:rgba(239,106,76,.3)">Remove</button>
+          </div>
+        </div>`;
+    }
+
+    let last = { partners: [] };
+
+    function renderPartners(rep){
+      last = rep || { partners: [] };
+      const list = last.partners || [];
+      const totalOwed = list.reduce((s,p)=>s+(p.commission||0),0);
+      pWrap.innerHTML = `
+        <div class="panel r3d" style="margin:0">
+          <div class="panel-head">
+            <h2>Partners</h2>
+            <span class="badge">${list.length?list.length+' · '+fmt(totalOwed)+' earned':'none yet'}</span>
+          </div>
+          <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+            ${list.length ? list.map(partnerCard).join('')
+              : '<div style="font-size:13px;color:var(--muted);line-height:1.6">No partners for this store. Add one below and they get a link to share — every deposit through it is credited to them.</div>'}
+
+            ${(last.unknownCodes||[]).length ? `<div style="border:1px solid rgba(239,106,76,.3);background:rgba(239,106,76,.08);border-radius:12px;padding:11px 13px">
+              <div style="font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--coral);margin-bottom:5px">Unrecognised codes</div>
+              <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.6">${last.unknownCodes.map(u=>esc(u.code)+' ('+u.count+')').join(', ')} — deposits arrived tagged with these, but no partner matches. Nobody is being credited for them.</div>
+            </div>` : ''}
+
+            <div style="border-top:1px solid var(--line-2);padding-top:12px">
+              <div style="font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Add a partner</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <input id="pName" placeholder="Partner name" maxlength="80" style="flex:2;min-width:130px;min-height:42px;padding:10px 12px;border-radius:11px;background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font-size:14px">
+                <div style="position:relative;flex:1;min-width:92px">
+                  <input id="pRate" type="number" step="0.5" min="0" max="50" value="10" style="width:100%;min-height:42px;padding:10px 28px 10px 12px;border-radius:11px;background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font-family:var(--mono);font-size:15px;font-weight:800">
+                  <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:13px;font-weight:800;color:var(--muted);pointer-events:none">%</span>
+                </div>
+                <button id="pAdd" class="btn sm" style="min-height:42px;padding:0 18px;font-weight:700">Add</button>
+              </div>
+              <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.55">
+                Commission is a share of the deposit itself, so a 10% partner earns GHS 10 on a GHS 100 deposit \u2014 separate from your platform fee, which the payer covers on top.${last.unattributed?' \u00b7 '+last.unattributed+' live deposit'+(last.unattributed!==1?'s':'')+' came in with no partner attached.':''}
+              </div>
+            </div>
+          </div>
+        </div>`;
+      wirePartners();
+    }
+
+    async function partnerCall(fn){
+      try{ renderPartners(await fn()); }
+      catch(e){ alert(e.message || 'That did not work.'); }
+    }
+
+    function wirePartners(){
+      const base = '/api/admin/members/' + encodeURIComponent(m.id) + '/partners';
+
+      /* admin.html has no delegated copy handler, unlike the merchant
+         dashboard, so these are bound directly. */
+      pWrap.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
+        navigator.clipboard.writeText(b.dataset.copy).then(()=>{
+          b.textContent='Copied';
+          setTimeout(()=>{ b.textContent='Copy'; },1600);
+        }).catch(()=>{ prompt('Copy this link:', b.dataset.copy); });
+      }));
+
+      document.getElementById('pAdd').addEventListener('click', ()=>{
+        const name = document.getElementById('pName').value.trim();
+        const rate = Number(document.getElementById('pRate').value);
+        if(name.length < 2){ alert('Give the partner a name.'); return; }
+        if(!Number.isFinite(rate) || rate < 0 || rate > 50){ alert('Commission must be between 0% and 50%.'); return; }
+        partnerCall(()=>API.post(base, { name, commissionBps: Math.round(rate*100) }));
+      });
+
+      pWrap.querySelectorAll('[data-prate]').forEach(b=>b.addEventListener('click',()=>{
+        const p = (last.partners||[]).find(x=>x.id===b.dataset.prate);
+        const v = prompt('Commission for "' + p.name + '" (%)\n\nApplies to deposits from now on. What they have already earned does not change.', String(p.commissionBps/100));
+        if(v===null) return;
+        const rate = Number(v);
+        if(!Number.isFinite(rate) || rate < 0 || rate > 50){ alert('Enter a rate between 0 and 50.'); return; }
+        partnerCall(()=>API.put(base + '/' + encodeURIComponent(p.id), { commissionBps: Math.round(rate*100) }));
+      }));
+
+      pWrap.querySelectorAll('[data-ptoggle]').forEach(b=>b.addEventListener('click',()=>{
+        const p = (last.partners||[]).find(x=>x.id===b.dataset.ptoggle);
+        const on = p.active === false;
+        if(!on && !confirm('Switch off "' + p.name + '"? Their link stops working straight away. Deposits already credited to them are unaffected.')) return;
+        partnerCall(()=>API.put(base + '/' + encodeURIComponent(p.id), { active: on }));
+      }));
+
+      pWrap.querySelectorAll('[data-pdel]').forEach(b=>b.addEventListener('click',()=>{
+        const p = (last.partners||[]).find(x=>x.id===b.dataset.pdel);
+        if(!confirm('Remove "' + p.name + '"?\n\nTheir link stops working. The deposits they brought in stay on the books and keep their name \u2014 only future attribution is lost.')) return;
+        partnerCall(()=>API.delete(base + '/' + encodeURIComponent(p.id)));
+      }));
+    }
+
+    pWrap.innerHTML = '<div class="state-box"><div class="spinbig"></div></div>';
+    API.get('/api/admin/members/' + encodeURIComponent(m.id) + '/partners')
+      .then(renderPartners)
+      .catch(()=>{ pWrap.innerHTML = '<div style="font-family:var(--mono);font-size:11.5px;color:var(--coral)">Could not load partners.</div>'; });
 
     const feeReset = document.getElementById('mbFeeReset');
     if(feeReset) feeReset.addEventListener('click', ()=>{
