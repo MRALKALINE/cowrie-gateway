@@ -407,7 +407,7 @@ const POLL_STOP_MS    = 180000;   // p99 of successes is 172s
 let _pollStarted=0,_pollNudge=null,_pollStop=null;
 
 function clearPollTimers(){
-  clearPollTimers();   // also cancels the nudge and stop timers
+  if(_poll){clearInterval(_poll);_poll=null;}
   if(_pollNudge){clearTimeout(_pollNudge);_pollNudge=null;}
   if(_pollStop){clearTimeout(_pollStop);_pollStop=null;}
 }
