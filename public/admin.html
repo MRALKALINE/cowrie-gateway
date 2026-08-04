@@ -1103,32 +1103,47 @@ function barChart(days){
 function dailyBreakdown(days){
   const rows = days || [];
   if(!rows.length) return '';
-  const label = (d,i) => i===0 ? 'Today' : i===1 ? 'Yesterday' : d.label;
-  const totalRev = rows.reduce((s,d)=>s+(d.amount||0),0);
-  const totalFee = rows.reduce((s,d)=>s+(d.fee||0),0);
-  const totalCnt = rows.reduce((s,d)=>s+(d.count||0),0);
+
+  /* Each day stands on its own — no running total, because the question this
+     answers is "what did I take on Tuesday", not "how much so far". The 7-day
+     figure is a badge, deliberately subordinate to the daily rows. */
+  const total  = rows.reduce((s,d)=>s+(d.fee||0),0);
+  const peak   = Math.max(1, ...rows.map(d=>d.fee||0));
+  const earned = rows.filter(d=>(d.fee||0)>0).length;
+  const label  = (d,i) => i===0 ? 'Today' : i===1 ? 'Yesterday' : d.label;
+  /* The blended rate for the day. It will not always equal your headline rate:
+     a day spanning a rate change, or one with charges raised before fees
+     existed, lands in between — which is the honest figure, not a bug. */
+  const rate   = d => (d.amount>0 && d.fee>0) ? ((d.fee/d.amount)*100).toFixed(2).replace(/\.?0+$/,'')+'%' : '';
 
   return `
     <div class="panel r3d">
       <div class="panel-head">
-        <h2>Daily breakdown</h2>
-        <span class="badge">last 7 days</span>
+        <h2>What you earned, day by day</h2>
+        <span class="badge">${earned} of 7 days · ${fmt(total)} in total</span>
       </div>
       <div style="overflow-x:auto"><table class="table">
-        <thead><tr><th>Day</th><th>Revenue</th><th>Fees earned</th><th>Payments</th></tr></thead>
+        <thead><tr><th>Day</th><th>You earned</th><th>From revenue of</th><th>Payments</th></tr></thead>
         <tbody>
-          ${rows.map((d,i)=>`<tr${d.count?'':' style="opacity:.45"'}>
-            <td data-label="Day" style="font-weight:${i===0?'700':'400'}">${esc(label(d,i))}${i<2?` <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${esc(d.label)}</span>`:''}</td>
-            <td data-label="Revenue" style="font-family:var(--mono);font-weight:700">${fmt(d.amount||0)}</td>
-            <td data-label="Fees earned" style="font-family:var(--mono);font-weight:700;color:var(--gold)">${fmt(d.fee||0)}</td>
-            <td data-label="Payments" style="font-family:var(--mono);color:var(--muted)">${d.count||0}</td>
-          </tr>`).join('')}
-          <tr style="border-top:1px solid var(--line)">
-            <td data-label="Day" style="font-weight:800">Total</td>
-            <td data-label="Revenue" style="font-family:var(--mono);font-weight:800">${fmt(totalRev)}</td>
-            <td data-label="Fees earned" style="font-family:var(--mono);font-weight:800;color:var(--gold)">${fmt(totalFee)}</td>
-            <td data-label="Payments" style="font-family:var(--mono);font-weight:800">${totalCnt}</td>
-          </tr>
+          ${rows.map((d,i)=>{
+            const fee = d.fee||0;
+            const w = Math.round((fee/peak)*100);
+            return `<tr${fee?'':' style="opacity:.4"'}>
+            <td data-label="Day">
+              <div style="font-weight:${i===0?'800':'600'};font-size:13.5px">${esc(label(d,i))}</div>
+              ${i<2?`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">${esc(d.label)}</div>`:''}
+            </td>
+            <td data-label="You earned" style="min-width:150px">
+              <div style="font-family:var(--mono);font-weight:800;font-size:16px;color:${fee?'var(--gold)':'var(--faint)'}">${fmt(fee)}</div>
+              <div style="height:5px;border-radius:3px;background:rgba(255,255,255,.07);margin-top:6px;overflow:hidden;max-width:190px">
+                <div style="height:100%;width:${w}%;border-radius:3px;background:linear-gradient(90deg,var(--gold),rgba(224,161,46,.55))"></div>
+              </div>
+            </td>
+            <td data-label="From revenue of" style="font-family:var(--mono);font-size:13px;color:var(--ink-soft)">
+              ${fmt(d.amount||0)}${rate(d)?` <span style="font-size:10px;color:var(--muted)">@ ${rate(d)}</span>`:''}
+            </td>
+            <td data-label="Payments" style="font-family:var(--mono);font-size:13px;color:var(--muted)">${d.count||0}</td>
+          </tr>`;}).join('')}
         </tbody>
       </table></div>
     </div>`;
