@@ -1710,7 +1710,19 @@ async function renderMembers(el){
           <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
             <button class="btn sm" data-prate="${esc(p.id)}" style="min-height:34px">Change rate</button>
             <button class="btn sm" data-ptoggle="${esc(p.id)}" style="min-height:34px">${off?'Switch on':'Switch off'}</button>
+            <button class="btn sm" data-pusers="${esc(p.id)}" style="min-height:34px">Assign users${p.userIdCount?' ('+p.userIdCount+')':''}</button>
             <button class="btn sm" data-pdel="${esc(p.id)}" style="min-height:34px;color:var(--coral);border-color:rgba(239,106,76,.3)">Remove</button>
+          </div>
+
+          <div id="pu_${esc(p.id)}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line-2)">
+            <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);line-height:1.55;margin-bottom:7px">
+              The store's own user ids for the people ${esc(p.name)} signed up. One per line, or separated by commas. Every deposit from these users is credited to ${esc(p.name)}.
+            </div>
+            <textarea id="pt_${esc(p.id)}" rows="5" placeholder="0a114f58-c2e7-4a60-b399-6dc17d637a65&#10;48fcd9ef-335e-447e-a1af-b6519e575837" style="width:100%;padding:10px 12px;border-radius:11px;background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--ink);font-family:var(--mono);font-size:11.5px;line-height:1.6;resize:vertical"></textarea>
+            <div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap">
+              <button class="btn sm" data-pusave="${esc(p.id)}" style="min-height:36px;font-weight:700">Save users</button>
+              <button class="btn sm" data-pucancel="${esc(p.id)}" style="min-height:36px">Cancel</button>
+            </div>
           </div>
         </div>`;
     }
@@ -1746,6 +1758,7 @@ async function renderMembers(el){
                 </div>
                 <button id="pAdd" class="btn sm" style="min-height:42px;padding:0 18px;font-weight:700">Add</button>
               </div>
+              ${list.length?`<button id="pBackfill" class="btn sm" style="min-height:38px;margin-top:9px;width:100%">Credit past deposits from the assigned users</button>`:''}
               <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.55">
                 Commission is a share of the deposit itself, so a 10% partner earns GHS 10 on a GHS 100 deposit \u2014 separate from your platform fee, which the payer covers on top.${last.unattributed?' \u00b7 '+last.unattributed+' live deposit'+(last.unattributed!==1?'s':'')+' came in with no partner attached.':''}
               </div>
@@ -1795,6 +1808,54 @@ async function renderMembers(el){
         if(!on && !confirm('Switch off "' + p.name + '"? Their link stops working straight away. Deposits already credited to them are unaffected.')) return;
         partnerCall(()=>API.put(base + '/' + encodeURIComponent(p.id), { active: on }));
       }));
+
+      /* The id list is written into the box on open rather than rendered into
+         the card, so a partner with thousands of users does not build a
+         thousand-line DOM node nobody asked to see. */
+      pWrap.querySelectorAll('[data-pusers]').forEach(b=>b.addEventListener('click',()=>{
+        const p = (last.partners||[]).find(x=>x.id===b.dataset.pusers);
+        const box = document.getElementById('pu_'+p.id);
+        const ta  = document.getElementById('pt_'+p.id);
+        const open = box.style.display !== 'none';
+        box.style.display = open ? 'none' : 'block';
+        if(!open){ ta.value = (p.userIds||[]).join('\n'); ta.focus(); }
+      }));
+
+      pWrap.querySelectorAll('[data-pucancel]').forEach(b=>b.addEventListener('click',()=>{
+        document.getElementById('pu_'+b.dataset.pucancel).style.display='none';
+      }));
+
+      pWrap.querySelectorAll('[data-pusave]').forEach(b=>b.addEventListener('click',()=>{
+        const id = b.dataset.pusave;
+        const text = document.getElementById('pt_'+id).value;
+        partnerCall(()=>API.put(base + '/' + encodeURIComponent(id) + '/users', { userIds: text }));
+      }));
+
+      const bf = document.getElementById('pBackfill');
+      if(bf) bf.addEventListener('click', async ()=>{
+        const was = bf.textContent;
+        bf.disabled = true; bf.textContent = 'Checking\u2026';
+        try{
+          /* Counted first and confirmed against real figures — this moves money
+             between people, so nobody should be agreeing to a number they have
+             not seen. */
+          const dry = await API.post(base + '/backfill', {});
+          if(!dry.matched){
+            alert('Nothing to credit.\n\n' + dry.candidates + ' settled deposit(s) have no partner, but none of them came from a user you have assigned.');
+            return;
+          }
+          const lines = dry.perPartner.map(r=>'  \u2022 ' + r.name + ' \u2014 ' + r.deposits + ' deposit(s), ' + fmt(r.commission) + ' at ' + (r.rate/100) + '%').join('\n');
+          if(!confirm('Credit ' + dry.matched + ' past deposit(s)?\n\n' + lines + '\n\nThese were taken before anyone was assigned to them, so they are credited at each partner\u2019s rate as it stands now. This cannot be undone.')) return;
+          bf.textContent = 'Crediting\u2026';
+          const done = await API.post(base + '/backfill', { confirm: true });
+          renderPartners(done.report);
+          alert('Credited ' + done.changed + ' deposit(s).');
+        }catch(e){
+          alert(e.message || 'Backfill failed.');
+        }finally{
+          if(bf.isConnected){ bf.disabled = false; bf.textContent = was; }
+        }
+      });
 
       pWrap.querySelectorAll('[data-pdel]').forEach(b=>b.addEventListener('click',()=>{
         const p = (last.partners||[]).find(x=>x.id===b.dataset.pdel);

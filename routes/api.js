@@ -483,16 +483,22 @@ router.post('/charges', chargeLimiter, resolveMerchantByKey, ah(async (req, res)
      An unrecognised code does not fail the deposit — losing a real payment to
      a typo would be far worse than losing the attribution — but it is recorded
      so it shows up in the console instead of vanishing. */
-  const code = (req.body && (req.body.partner || req.body.ref)) || req.query.ref;
+  const code = partners.codeFrom(req.body, req.query);
+  let credited = null;
   if (code) {
-    const partner = partners.byCode(req.merchant, code);
-    if (partner && partner.active !== false) {
-      partners.attach(charge, partner);
-    } else {
-      charge.partnerCodeUnknown = partners.normaliseCode(code);
-    }
-    await store.charges.update(charge);
+    const named = partners.byCode(req.merchant, code);
+    if (named && named.active !== false) credited = named;
+    else charge.partnerCodeUnknown = partners.normaliseCode(code);
   }
+  /* No code, or one nobody recognises — fall back to the merchant's own user
+     id. Agrah sends metadata.userId on every deposit and knows which partner
+     signed each user up, so a mapping held here credits the right person
+     without their integration changing at all. */
+  if (!credited) {
+    credited = partners.byUserId(req.merchant, partners.userIdOf(charge));
+  }
+  if (credited) partners.attach(charge, credited);
+  if (credited || charge.partnerCodeUnknown) await store.charges.update(charge);
 
   res.status(201).json({ charge, checkout_url: checkoutUrlFor(req, charge) });
 }));
@@ -954,6 +960,7 @@ async function partnerReport(merchant) {
 
     return {
       ...p,
+      userIdCount: partners.userIds(p).length,
       deposits: paid.length,
       volume: paid.reduce((s, c) => s + (c.amount || 0), 0),
       commission: paid.reduce((s, c) => s + (c.partnerCommission || 0), 0),
@@ -978,6 +985,88 @@ async function partnerReport(merchant) {
     unattributed: live.filter((c) => c.status === 'success' && !c.partnerId).length,
   };
 }
+
+/* The list of the merchant's own user ids belonging to this partner. Sent as
+   a pasted block or an array; whitespace, commas and newlines all separate. */
+router.put('/admin/members/:merchantId/partners/:partnerId/users', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+  const partner = partners.byId(merchant, req.params.partnerId);
+  if (!partner) { const e = new Error('Partner not found.'); e.status = 404; throw e; }
+
+  const ids = partners.parseUserIds((req.body && (req.body.userIds ?? req.body.text)) || '');
+
+  /* One user cannot belong to two partners — that would credit the same
+     deposit twice depending on which was found first. */
+  const clash = [];
+  for (const other of partners.list(merchant)) {
+    if (other.id === partner.id) continue;
+    const overlap = ids.filter((x) => partners.userIds(other).includes(x));
+    if (overlap.length) clash.push({ partner: other.name, count: overlap.length, sample: overlap.slice(0, 3) });
+  }
+  if (clash.length) {
+    const e = new Error(`Some of those users are already assigned to ${clash.map((c) => `${c.partner} (${c.count})`).join(', ')}. Remove them there first.`);
+    e.status = 409; throw e;
+  }
+
+  partner.userIds = ids;
+  merchant.partners = partners.list(merchant).map((x) => (x.id === partner.id ? partner : x));
+  await store.merchants.update(merchant);
+  res.json(await partnerReport(merchant));
+}));
+
+/* Credits deposits already taken.
+
+   Only settled deposits are touched: a pending one still has the checkout and
+   the gateway callback writing to it, and a bulk write would race them.
+
+   These deposits were taken before anyone was assigned to them, so there is no
+   historical rate to honour — they are credited at the partner's rate as it
+   stands now. That is a decision with money attached, so the response says
+   exactly how many were changed and at what rate. */
+router.post('/admin/members/:merchantId/partners/backfill', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+
+  const charges = await store.charges.forMerchant(merchant.id);
+  const settled = charges.filter((c) => (c.mode || 'test') === 'live'
+    && (c.status === 'success' || c.status === 'failed')
+    && !c.partnerId);
+
+  const dryRun = !(req.body && req.body.confirm === true);
+  const perPartner = {};
+  let changed = 0;
+
+  for (const c of settled) {
+    const partner = partners.byUserId(merchant, partners.userIdOf(c));
+    if (!partner) continue;
+    const row = perPartner[partner.id] || (perPartner[partner.id] = {
+      name: partner.name, rate: partner.commissionBps, deposits: 0, volume: 0, commission: 0,
+    });
+    row.deposits++;
+    if (c.status === 'success') {
+      row.volume += c.amount || 0;
+      row.commission += partners.commissionFor(c.amount, partner.commissionBps);
+    }
+    if (!dryRun) {
+      partners.attach(c, partner);
+      c.backfilledAt = Date.now();
+      /* forceUpdate, not update: these are settled records with no other
+         writer, and a version conflict here would silently skip a deposit. */
+      await store.charges.forceUpdate(c);
+      changed++;
+    }
+  }
+
+  res.json({
+    dryRun,
+    candidates: settled.length,
+    matched: Object.values(perPartner).reduce((s, r) => s + r.deposits, 0),
+    changed,
+    perPartner: Object.values(perPartner),
+    report: dryRun ? null : await partnerReport(merchant),
+  });
+}));
 
 router.get('/admin/members/:merchantId/partners', requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
