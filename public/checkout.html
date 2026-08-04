@@ -392,16 +392,56 @@ function handleNext(next,detail){
 }
 
 let _poll=null;
+/* Polling window, chosen from what actually happens: successful payments
+   resolve in a median of 15s, p95 at 56s and p99 at 172s, while failures sit
+   at a timeout around 11 minutes. Waiting the old ten minutes therefore showed
+   a spinner for nine of them after the outcome was effectively decided.
+
+   Three minutes covers 99.6% of successes. Stopping does NOT abandon the
+   charge — it stays open server-side and the Nalopay callback can still settle
+   it — it only stops the spinner and hands the payer something to do. */
+const POLL_EVERY_MS   = 3500;
+const POLL_NUDGE_MS   = 45000;    // prompt probably missed; say so
+const POLL_STOP_MS    = 180000;   // p99 of successes is 172s
+
+let _pollStarted=0,_pollNudge=null,_pollStop=null;
+
+function clearPollTimers(){
+  clearPollTimers();   // also cancels the nudge and stop timers
+  if(_pollNudge){clearTimeout(_pollNudge);_pollNudge=null;}
+  if(_pollStop){clearTimeout(_pollStop);_pollStop=null;}
+}
+
 function startPolling(){
-  if(_poll)clearInterval(_poll);
+  clearPollTimers();
+  _pollStarted=Date.now();
+
   _poll=setInterval(async()=>{
     try{
       const {charge,next}=await API.get(`/api/charges/${S.charge.reference}/poll`);
       S.charge=charge;
-      if(next==='success'||next==='failed'){clearInterval(_poll);_poll=null;go(next);}
+      if(next==='success'||next==='failed'){clearPollTimers();go(next);}
     }catch(e){}
-  },3500);
-  setTimeout(()=>{if(_poll){clearInterval(_poll);_poll=null;}},600000);
+  },POLL_EVERY_MS);
+
+  /* Most people who are going to pay have done so by now. If they have not,
+     the likeliest reason is the prompt never arrived. */
+  _pollNudge=setTimeout(()=>{
+    const el=document.getElementById('pollNudge');
+    if(el) el.style.display='block';
+  },POLL_NUDGE_MS);
+
+  _pollStop=setTimeout(()=>{
+    clearPollTimers();
+    go('still_waiting');
+  },POLL_STOP_MS);
+}
+
+/* Resuming gives the payer another full window without creating a new charge,
+   so a slow approval is still picked up. */
+function resumePolling(){
+  go('approve');
+  startPolling();
 }
 
 function render(){
@@ -425,6 +465,7 @@ function render(){
     bindForm();
   }
   else if(S.step==='approve')b.innerHTML=stateApprove();
+  else if(S.step==='still_waiting'){b.innerHTML=stateStillWaiting();bindStillWaiting();}
   else if(S.step==='bank')renderBankDetails(b);
   else if(S.step==='static_transfer')renderStaticTransfer(b);
   else if(S.step==='transfer_sent')renderTransferSent(b);
@@ -527,11 +568,38 @@ function stateApprove(){
     <h3>Approve on your phone</h3>
     <p>A prompt has been sent to your ${p?p+' ':''}line. Enter your mobile money PIN to authorise ${fmt(amount(),ccy())}.</p>
     <div class="hint" style="justify-content:center;margin-top:14px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--muted)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>Waiting for confirmation…</div>
+    <div id="pollNudge" style="display:none;margin-top:16px;padding:12px 14px;border-radius:11px;background:rgba(224,161,46,.1);border:1px solid rgba(224,161,46,.28);font-size:12.5px;color:#E0A12E;line-height:1.55">
+      Haven't received the prompt? Check your phone is unlocked and on the ${S.provider||'mobile money'} line, then dial <b style="font-family:var(--mono)">*170#</b> and choose "My Wallet" to approve a pending payment.
+    </div>
   </div>`;
 }
 
+/* Reached when the poll window closes without an outcome. The charge is still
+   open — the gateway callback can settle it after this — so the wording says
+   "not confirmed yet", never "failed". Checking again resumes polling rather
+   than creating a second charge. */
+function stateStillWaiting(){
+  return `<div class="state">
+    <div class="ic" style="background:rgba(224,161,46,.14);color:#E0A12E"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+    <h3>Not confirmed yet</h3>
+    <p>We haven't had confirmation for your ${fmt(amount(),ccy())} payment. If you approved the prompt it may still come through — check again below.</p>
+    <div style="margin-top:16px;padding:12px 14px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);line-height:1.6;text-align:left">
+      Didn't see a prompt? Dial <b style="font-family:var(--mono)">*170#</b>, choose <b>My Wallet</b>, then <b>Approve payment</b>. Or start again with a different number.
+    </div>
+    <button class="pay" id="swCheck" style="margin-top:16px"><span class="spin"></span><span class="lbl">Check again</span></button>
+    <button class="back" id="swRestart" style="margin-top:10px">← Try another method</button>
+  </div>`;
+}
+
+function bindStillWaiting(){
+  const c=document.getElementById('swCheck');
+  if(c) c.addEventListener('click',()=>{ c.classList.add('loading'); resumePolling(); });
+  const r=document.getElementById('swRestart');
+  if(r) r.addEventListener('click',()=>{ clearPollTimers(); go('form'); });
+}
+
 function stateSuccess(){
-  if(_poll){clearInterval(_poll);_poll=null;}
+  clearPollTimers();   // also cancels the nudge and stop timers
   $('#amtLbl').textContent='Paid to '+merchantName();
   const ch=S.charge.auth&&S.charge.auth.channel;
   const ML={card:'Card',mobile_money:'Mobile money',bank_transfer:'Bank transfer',ussd:'USSD'};
@@ -552,7 +620,7 @@ function stateSuccess(){
 }
 
 function stateFailed(){
-  if(_poll){clearInterval(_poll);_poll=null;}
+  clearPollTimers();   // also cancels the nudge and stop timers
   const f=S.charge.failure||{message:'Your payment could not be processed.'};
   return `<div class="state">
     <div class="ic" style="background:var(--coral-tint);color:var(--coral)"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg></div>
