@@ -1471,6 +1471,9 @@ async function renderMembers(el){
 
   function initials(name){ return name.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
 
+  /* Basis points read back as a percentage: 300 -> "3%", 250 -> "2.5%". */
+  function pct(bps){ return (Math.round(Number(bps)||0)/100).toFixed(2).replace(/\.?0+$/,'') + '%'; }
+
   function showList(){
     el.innerHTML=`
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -1484,6 +1487,7 @@ async function renderMembers(el){
             <div style="text-align:right;flex-shrink:0">
               <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--mint)">${fmt(m.liveCollected,'GHS')}</div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">live revenue</div>
+              <div style="font-family:var(--mono);font-size:10px;font-weight:700;margin-top:4px;padding:1px 6px;border-radius:5px;display:inline-block;${m.feeBpsCustom?'color:var(--gold);background:rgba(224,161,46,.14);border:1px solid rgba(224,161,46,.3)':'color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--line)'}">${pct(m.feeBps)} fee</div>
             </div>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="2" style="flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
           </button>`).join('')}
@@ -1544,6 +1548,26 @@ async function renderMembers(el){
         </div>
       </div>
 
+      <!-- Each store can be priced on its own terms. The rate applies to
+           charges raised from now on; every charge records what it was priced
+           at, so changing this never restates money already taken. -->
+      <div style="margin-bottom:16px;padding:16px 18px;border-radius:14px;background:rgba(224,161,46,.07);border:1px solid rgba(224,161,46,.2)">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--gold)">Fee rate</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">${m.feeBpsCustom?'set for this store':'platform default'}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div style="position:relative;flex:1;min-width:110px">
+            <input id="mbFeeInput" type="number" step="0.05" min="0" max="20" value="${(Number(m.feeBps)||0)/100}"
+              style="width:100%;min-height:44px;padding:10px 30px 10px 13px;border-radius:11px;background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font-family:var(--mono);font-size:16px;font-weight:800">
+            <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:14px;font-weight:800;color:var(--muted);pointer-events:none">%</span>
+          </div>
+          <button id="mbFeeSave" class="btn sm" style="min-height:44px;padding:0 18px;font-weight:700;background:rgba(224,161,46,.16);border:1px solid rgba(224,161,46,.4);color:var(--gold)">Save</button>
+          ${m.feeBpsCustom?'<button id="mbFeeReset" class="btn sm" style="min-height:44px;padding:0 14px">Use default</button>':''}
+        </div>
+        <div id="mbFeeHint" style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:9px;line-height:1.55"></div>
+      </div>
+
       <div style="margin-bottom:16px">
         <button id="mbLockBtn" style="width:100%;min-height:46px;padding:12px 18px;border-radius:12px;font-family:var(--display);font-weight:700;font-size:14px;cursor:pointer;border:1.5px solid ${m.locked?'rgba(31,168,119,.4)':'rgba(239,106,76,.4)'};background:${m.locked?'rgba(31,168,119,.12)':'rgba(239,106,76,.12)'};color:${m.locked?'var(--mint)':'#EF6A4C'}">
           ${m.locked?'🔓 Unlock account':'🔒 Lock account'}
@@ -1576,6 +1600,49 @@ async function renderMembers(el){
       </div>`;
 
     document.getElementById('mbBack').addEventListener('click', showList);
+
+    /* Fee rate. The worked example updates as you type, because "2.5%" means
+       less at a glance than "a GHS 100 charge costs the payer GHS 102.50". */
+    const feeInput = document.getElementById('mbFeeInput');
+    const feeHint  = document.getElementById('mbFeeHint');
+    function feePreview(){
+      const v = Number(feeInput.value);
+      if(!Number.isFinite(v) || v < 0 || v > 20){
+        feeHint.innerHTML = '<span style="color:#EF6A4C">Enter a rate between 0% and 20%.</span>';
+        return null;
+      }
+      const bps = Math.round(v*100);
+      const total = 10000 + Math.round((10000*bps)/10000);
+      feeHint.innerHTML = 'On a GHS 100 charge \u2014 ' + esc(m.businessName) + ' is paid <strong style="color:var(--mint)">GHS 100.00</strong>, the payer is charged <strong style="color:var(--ink)">' + fmt(total,'GHS') + '</strong>, you keep <strong style="color:var(--gold)">' + fmt(total-10000,'GHS') + '</strong>.<br>Applies to new charges only.';
+      return bps;
+    }
+    feePreview();
+    feeInput.addEventListener('input', feePreview);
+
+    async function saveFee(bps, btn, label){
+      const was = btn.textContent;
+      btn.disabled = true; btn.textContent = label;
+      try{
+        const r = await API.put('/api/admin/members/' + encodeURIComponent(m.id) + '/fee', { feeBps: bps });
+        m.feeBps = r.feeBps; m.feeBpsCustom = r.feeBpsCustom;
+        showDetail(m);
+      }catch(e){
+        alert(e.message || 'Could not save the rate.');
+        btn.disabled = false; btn.textContent = was;
+      }
+    }
+
+    document.getElementById('mbFeeSave').addEventListener('click', ()=>{
+      const bps = feePreview();
+      if(bps === null){ feeInput.focus(); return; }
+      saveFee(bps, document.getElementById('mbFeeSave'), 'Saving\u2026');
+    });
+
+    const feeReset = document.getElementById('mbFeeReset');
+    if(feeReset) feeReset.addEventListener('click', ()=>{
+      if(!confirm('Put "' + m.businessName + '" back on the platform default rate?')) return;
+      saveFee(null, feeReset, 'Resetting\u2026');
+    });
 
     const lockBtn = document.getElementById('mbLockBtn');
     lockBtn.addEventListener('click', async ()=>{

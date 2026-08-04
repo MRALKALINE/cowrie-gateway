@@ -455,8 +455,10 @@ router.post('/charges/:reference/set-amount', payLimiter, loadCharge, ah(async (
   }
   charge.amount = Math.round(major * 100);
   /* An open-amount charge has no amount until now, so the fee is computed the
-     moment one is chosen. */
-  fees.applyFee(charge);
+     moment one is chosen — at the rate recorded when the charge was raised,
+     not whatever the merchant's rate happens to be by the time the payer
+     types a figure. */
+  fees.applyFee(charge, charge.feeBps);
   charge.updatedAt = Date.now();
   charge.openAmount = false;
   await store.charges.update(charge);
@@ -707,6 +709,8 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
       lockReason: m.lockReason || null,
       lockedAt: m.lockedAt || null,
       demo: !!m.demo,
+      feeBps: fees.feeBpsForMerchant(m),
+      feeBpsCustom: !(m.feeBps === null || m.feeBps === undefined || m.feeBps === ''),
       liveGross,
       liveToday,
       liveTodayCount: liveTodayList.length,
@@ -898,6 +902,39 @@ router.delete('/admin/members/:merchantId', writeLimiter, requireAdminAuth, ah(a
   res.json({
     ok: true,
     deleted: { merchantId: merchant.id, businessName: merchant.businessName, charges: charges.length, payouts: payouts.length },
+  });
+}));
+
+/* Sets one merchant's fee rate, or clears it back to the platform default.
+
+   Rate is in basis points so it stays exact — 300 is 3%, 250 is 2.5%. Only
+   charges raised after the change use it: each charge records the rate it was
+   priced at, so re-rating a merchant never rewrites what they have already
+   been billed. */
+router.put('/admin/members/:merchantId/fee', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+
+  const raw = req.body && req.body.feeBps;
+  /* null / '' clears the override and puts them back on the platform rate. */
+  if (raw === null || raw === undefined || raw === '') {
+    delete merchant.feeBps;
+  } else {
+    const bps = Number(raw);
+    if (!Number.isFinite(bps) || bps < 0 || bps > 2000) {
+      const e = new Error('Rate must be between 0% and 20%.'); e.status = 400; throw e;
+    }
+    merchant.feeBps = Math.round(bps);
+  }
+  merchant.feeRateSetAt = Date.now();
+  merchant.feeRateSetBy = req.adminEmail || null;
+  await store.merchants.update(merchant);
+
+  res.json({
+    ok: true,
+    merchantId: merchant.id,
+    feeBps: fees.feeBpsForMerchant(merchant),
+    feeBpsCustom: merchant.feeBps !== undefined,
   });
 }));
 
