@@ -523,6 +523,7 @@ router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
     openAmount: !!c.openAmount,
     callbackUrl: c.callbackUrl || null,
     nalopayRef: c.nalopayRef || null,   // the checkout uses this to re-verify on return
+    ussdCode: c.ussdCode || null,       // dial-to-approve string, when the network gives one
     failure: c.failure ? { message: c.failure.message } : null,
     auth: c.auth ? { channel: c.auth.channel, network: c.auth.network, brand: c.auth.brand, last4: c.auth.last4 } : null,
     merchantName:    merchant ? merchant.businessName : 'KassifyPay',
@@ -1661,10 +1662,15 @@ router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, re
       c.lastAttemptAt = Date.now();
       c.updatedAt = Date.now();
       c.auth = { provider: 'nalopay', channel: 'mobile_money', network, phone: account.slice(-10) };
+      /* Nalopay sometimes hands back a USSD string the payer can dial to
+         approve. It was being returned and dropped on the floor, which is
+         exactly what a payer whose prompt never arrived needs. Kept on the
+         charge so it survives a page reload too. */
+      if (data.data.otp_code) c.ussdCode = String(data.data.otp_code);
     });
     /* Always PENDING here — the payer approves the prompt on their handset and
        the checkout polls. `otp_code` is a USSD string to dial, not an OTP. */
-    return res.json({ charge, next: 'pending', detail: data.data.otp_code || null });
+    return res.json({ charge, next: 'pending', detail: data.data.otp_code || null, ussdCode: data.data.otp_code || null });
   }
 
   if (method === 'card') {

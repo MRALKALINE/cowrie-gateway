@@ -226,7 +226,7 @@ const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $=s=>document.querySelector(s);
 const SYMS={GHS:'₵',NGN:'₦',KES:'KSh',ZAR:'R',USD:'$',EUR:'€',GBP:'£'};
 const fmt=(minor,ccy)=>(SYMS[ccy]||(ccy+' '))+' '+(minor/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const S={method:'card',step:'form',provider:'MTN',charge:null,bankDetail:null,ussdDetail:null,threeDsUrl:null,staticAccounts:[],payerName:''};
+const S={resends:0,lastPay:null,method:'card',step:'form',provider:'MTN',charge:null,bankDetail:null,ussdDetail:null,threeDsUrl:null,staticAccounts:[],payerName:''};
 /* amount() is what the payer pays — the merchant's amount plus the platform
    fee. Every figure on this page quotes it, so the payer is never shown a
    number smaller than what leaves their account. baseAmount/feeAmount are for
@@ -366,6 +366,10 @@ function bindForm(){
 async function submitPay(btn,method,details){
   btn.classList.add('loading');
   try{
+    /* Kept so the prompt can be re-issued without asking for the number
+       again. The server mints a fresh Nalopay reference per attempt, so a
+       repeat is a genuine second prompt rather than a duplicate of the first. */
+    S.lastPay={method,details};
     const {charge,next,detail}=await API.post(`/api/charges/${S.charge.reference}/pay`,{method,...details,payerName:S.payerName});
     S.charge=charge;
     btn.classList.remove('loading');
@@ -401,7 +405,7 @@ let _poll=null;
    charge — it stays open server-side and the Nalopay callback can still settle
    it — it only stops the spinner and hands the payer something to do. */
 const POLL_EVERY_MS   = 3500;
-const POLL_NUDGE_MS   = 45000;    // prompt probably missed; say so
+const POLL_NUDGE_MS   = 30000;    // p90 of successes is 24s; past that it is not coming
 const POLL_STOP_MS    = 180000;   // p99 of successes is 172s
 
 let _pollStarted=0,_pollNudge=null,_pollStop=null;
@@ -436,6 +440,10 @@ function startPolling(){
   _pollNudge=setTimeout(()=>{
     const el=document.getElementById('pollNudge');
     if(el) el.style.display='block';
+    /* Only offered once the first prompt has clearly not landed, and only for
+       mobile money — there is nothing to re-send for a card. */
+    const rs=document.getElementById('resendPrompt');
+    if(rs && S.lastPay && S.lastPay.method==='mobile_money' && S.resends<2) rs.style.display='block';
   },POLL_NUDGE_MS);
 
   _pollStop=setTimeout(()=>{
@@ -576,9 +584,13 @@ function stateApprove(){
     <p>A prompt has been sent to your ${p?p+' ':''}line. Enter your mobile money PIN to authorise ${fmt(amount(),ccy())}.</p>
     <p style="font-size:12.5px;color:var(--muted);margin-top:-4px">Your wallet needs at least <b style="color:var(--ink-soft)">${fmt(amount(),ccy())}</b> available for the prompt to go through.</p>
     <div class="hint" style="justify-content:center;margin-top:14px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--muted)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>Waiting for confirmation…</div>
+    ${S.charge.ussdCode?`<div style="margin-top:14px;padding:12px 14px;border-radius:11px;background:rgba(12,110,119,.12);border:1px solid rgba(12,110,119,.32);font-size:12.5px;color:var(--ink-soft);line-height:1.6">
+      No prompt on your phone? Dial <b style="font-family:var(--mono);font-size:14px;color:var(--ink)">${esc(S.charge.ussdCode)}</b> to approve it yourself.
+    </div>`:''}
     <div id="pollNudge" style="display:none;margin-top:16px;padding:12px 14px;border-radius:11px;background:rgba(224,161,46,.1);border:1px solid rgba(224,161,46,.28);font-size:12.5px;color:#E0A12E;line-height:1.55">
       <b>Haven't received the prompt?</b> The commonest reason is not enough money in the wallet — it needs <b>${fmt(amount(),ccy())}</b> available. Check your balance, then dial <b style="font-family:var(--mono)">${ussdFor(p)}</b> and choose "${walletLabel(p)}" to approve a pending payment.
     </div>
+    <button class="back" id="resendPrompt" style="display:none;margin-top:12px">Send the prompt again</button>
   </div>`;
 }
 
@@ -760,6 +772,15 @@ document.getElementById('closeBtn').addEventListener('click',()=>{ location.href
 
 document.addEventListener('click',e=>{
   if(e.target&&e.target.id==='ret'){ location.href=backUrl(); }
+  if(e.target&&e.target.id==='resendPrompt'){
+    /* Two live prompts can both be approved, and that is two debits. The payer
+       is told plainly rather than finding out afterwards. */
+    if(!confirm('Send a new prompt to the same number?\n\nOnly do this if nothing arrived. If the first prompt does show up later, do not approve both \u2014 you would be charged twice.')) return;
+    const b=e.target; b.disabled=true; b.textContent='Sending\u2026';
+    S.resends++;
+    submitPay(b,S.lastPay.method,S.lastPay.details);
+    return;
+  }
   if(e.target&&e.target.id==='retryOther'){ clearPollTimers(); go('form'); return; }
   if(e.target&&e.target.id==='retry'){
     S.charge.status='pending';
