@@ -1041,12 +1041,17 @@ router.post('/admin/members/:merchantId/partners/backfill', writeLimiter, requir
     const partner = partners.byUserId(merchant, partners.userIdOf(c));
     if (!partner) continue;
     const row = perPartner[partner.id] || (perPartner[partner.id] = {
-      name: partner.name, rate: partner.commissionBps, deposits: 0, volume: 0, commission: 0,
+      name: partner.name, rate: partner.commissionBps, paid: 0, failed: 0, volume: 0, commission: 0,
     });
-    row.deposits++;
+    /* Paid and failed are counted apart. Both get the partner's name attached
+       so the record is complete, but only a paid one earns anything, and a
+       confirmation that lumps them together overstates what is being agreed. */
     if (c.status === 'success') {
+      row.paid++;
       row.volume += c.amount || 0;
       row.commission += partners.commissionFor(c.amount, partner.commissionBps);
+    } else {
+      row.failed++;
     }
     if (!dryRun) {
       partners.attach(c, partner);
@@ -1061,7 +1066,8 @@ router.post('/admin/members/:merchantId/partners/backfill', writeLimiter, requir
   res.json({
     dryRun,
     candidates: settled.length,
-    matched: Object.values(perPartner).reduce((s, r) => s + r.deposits, 0),
+    matched: Object.values(perPartner).reduce((s, r) => s + r.paid + r.failed, 0),
+    matchedPaid: Object.values(perPartner).reduce((s, r) => s + r.paid, 0),
     changed,
     perPartner: Object.values(perPartner),
     report: dryRun ? null : await partnerReport(merchant),

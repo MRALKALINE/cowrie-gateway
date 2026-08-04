@@ -1844,8 +1844,8 @@ async function renderMembers(el){
             alert('Nothing to credit.\n\n' + dry.candidates + ' settled deposit(s) have no partner, but none of them came from a user you have assigned.');
             return;
           }
-          const lines = dry.perPartner.map(r=>'  \u2022 ' + r.name + ' \u2014 ' + r.deposits + ' deposit(s), ' + fmt(r.commission) + ' at ' + (r.rate/100) + '%').join('\n');
-          if(!confirm('Credit ' + dry.matched + ' past deposit(s)?\n\n' + lines + '\n\nThese were taken before anyone was assigned to them, so they are credited at each partner\u2019s rate as it stands now. This cannot be undone.')) return;
+          const lines = dry.perPartner.map(r=>'  \u2022 ' + r.name + ' \u2014 ' + r.paid + ' paid deposit(s) worth ' + fmt(r.volume) + ', earning ' + fmt(r.commission) + ' at ' + (r.rate/100) + '%' + (r.failed?' (plus ' + r.failed + ' failed, which earn nothing)':'')).join('\n');
+          if(!confirm('Credit ' + dry.matchedPaid + ' paid deposit(s)?\n\n' + lines + '\n\nThese were taken before anyone was assigned to them, so they are credited at each partner\u2019s rate as it stands now. This cannot be undone.')) return;
           bf.textContent = 'Crediting\u2026';
           const done = await API.post(base + '/backfill', { confirm: true });
           renderPartners(done.report);
