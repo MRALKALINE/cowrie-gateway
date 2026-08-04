@@ -715,6 +715,10 @@ router.get('/admin/members', requireAdminAuth, ah(async (req, res) => {
       demo: !!m.demo,
       feeBps: fees.feeBpsForMerchant(m),
       feeBpsCustom: !(m.feeBps === null || m.feeBps === undefined || m.feeBps === ''),
+      /* Who set this rate and when. A rate is money, and a figure nobody can
+         account for is worse than no figure at all. */
+      feeRateSetAt: m.feeRateSetAt || null,
+      feeRateSetBy: m.feeRateSetBy || null,
       liveGross,
       liveToday,
       liveTodayCount: liveTodayList.length,
