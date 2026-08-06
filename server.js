@@ -108,6 +108,7 @@ app.get('/login',      (_, res) => sendPage(res, 'login.html'));
 app.get('/checkout',   (_, res) => sendPage(res, 'checkout.html'));
 app.get('/dashboard',  (_, res) => sendPage(res, 'dashboard.html'));
 app.get('/register',   (_, res) => sendPage(res, 'register.html'));
+app.get('/docs',       (_, res) => sendPage(res, 'docs.html'));
 app.get('/admin',      (_, res) => sendPage(res, 'admin.html'));
 app.get('/admin-login',(_, res) => sendPage(res, 'admin-login.html'));
 

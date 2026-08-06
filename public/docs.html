@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KassifyPay — Developer documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ivory:#071318; --ivory-2:#0B1B21; --white:#061116;
+  --ink:#E4EEF0; --ink-soft:rgba(228,238,240,.65); --muted:rgba(228,238,240,.4); --faint:rgba(228,238,240,.22);
+  --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.06);
+  --plum:#0C6E77; --plum-deep:#06424A; --plum-br:#17A2B0; --plum-tint:rgba(12,110,119,.22);
+  --gold:#E0A12E; --gold-deep:#C8901A; --gold-tint:rgba(224,161,46,.18);
+  --mint:#1FA877; --mint-tint:rgba(31,168,119,.18); --coral:#EF6A4C; --coral-tint:rgba(239,106,76,.15);
+  --display:'Plus Jakarta Sans',sans-serif; --body:'Plus Jakarta Sans',sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;overflow-x:hidden;scroll-padding-top:80px}
+body{background:#050E12;color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.6;min-height:100vh;overflow-x:hidden;max-width:100%}
+::selection{background:var(--plum);color:#fff}
+a{color:var(--plum-br);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font-family:inherit;cursor:pointer}
+
+/* ─── Top bar ─── */
+.top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:13px 22px;
+     background:rgba(5,14,18,.88);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:800;font-size:16px;color:var(--ink)}
+.brand:hover{text-decoration:none}
+.logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--plum),var(--plum-br));
+      display:grid;place-items:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0}
+.tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--plum-br);
+     border:1px solid rgba(23,162,176,.35);background:rgba(12,110,119,.16);padding:3px 8px;border-radius:6px}
+.top-spacer{flex:1}
+.top a.act{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.top a.act:hover{color:var(--ink);text-decoration:none}
+#navToggle{display:none;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink);
+           border-radius:9px;width:38px;height:38px;place-items:center}
+
+/* ─── Shell ─── */
+.shell{display:grid;grid-template-columns:236px minmax(0,1fr);gap:34px;max-width:1180px;margin:0 auto;padding:30px 22px 90px}
+.side{position:sticky;top:74px;align-self:start;max-height:calc(100vh - 96px);overflow-y:auto;padding-right:6px}
+.side h4{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+         margin:18px 0 7px}
+.side h4:first-child{margin-top:0}
+.side a{display:block;padding:6px 10px;border-radius:8px;font-size:13.5px;color:var(--ink-soft);
+        border-left:2px solid transparent;transition:.13s}
+.side a:hover{background:rgba(255,255,255,.05);color:var(--ink);text-decoration:none}
+.side a.on{color:var(--plum-br);border-left-color:var(--plum-br);background:rgba(12,110,119,.12);font-weight:600}
+
+/* ─── Content ─── */
+.doc{min-width:0}
+.doc h1{font-family:var(--display);font-size:32px;font-weight:800;letter-spacing:-.02em;margin-bottom:10px}
+.doc h2{font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.01em;margin:46px 0 12px;
+        padding-top:14px;border-top:1px solid var(--line-2)}
+.doc h3{font-family:var(--display);font-size:16px;font-weight:700;margin:26px 0 8px}
+.doc p{color:var(--ink-soft);margin-bottom:13px;font-size:14.5px}
+.doc ul,.doc ol{color:var(--ink-soft);margin:0 0 13px 20px;font-size:14.5px}
+.doc li{margin-bottom:6px}
+.doc strong{color:var(--ink);font-weight:700}
+code{font-family:var(--mono);font-size:12.5px;background:rgba(255,255,255,.07);border:1px solid var(--line-2);
+     padding:1px 6px;border-radius:5px;color:#8FE3EC;white-space:nowrap}
+.lead{font-size:16px;color:var(--ink-soft);margin-bottom:6px}
+
+/* ─── Code blocks ─── */
+.code{position:relative;background:#03090C;border:1px solid var(--line);border-radius:13px;margin:0 0 15px;overflow:hidden}
+.code-head{display:flex;align-items:center;gap:8px;padding:8px 13px;border-bottom:1px solid var(--line-2);
+           background:rgba(255,255,255,.02)}
+.code-lang{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.code-head .sp{flex:1}
+.copy{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.06);border:1px solid var(--line);
+      color:var(--ink-soft);padding:4px 10px;border-radius:7px}
+.copy:hover{background:rgba(12,110,119,.2);color:var(--ink)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.75;color:#C9D8DC}
+.code pre::-webkit-scrollbar{height:7px}
+.code pre::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px}
+
+/* ─── Tables ─── */
+.tw{overflow-x:auto;margin-bottom:15px;border:1px solid var(--line);border-radius:13px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:460px}
+th{text-align:left;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+   color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.03);font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid var(--line-2);color:var(--ink-soft);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td code{white-space:nowrap}
+
+/* ─── Callouts ─── */
+.note{border-radius:13px;padding:13px 16px;margin:0 0 15px;font-size:13.5px;line-height:1.65;
+      border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--ink-soft)}
+.note b{display:block;margin-bottom:4px;color:var(--ink);font-size:13px}
+.note.warn{border-color:rgba(239,106,76,.35);background:rgba(239,106,76,.09)}
+.note.warn b{color:var(--coral)}
+.note.tip{border-color:rgba(224,161,46,.32);background:rgba(224,161,46,.08)}
+.note.tip b{color:var(--gold)}
+.note.ok{border-color:rgba(31,168,119,.32);background:rgba(31,168,119,.08)}
+.note.ok b{color:var(--mint)}
+
+/* ─── Endpoint chips ─── */
+.ep{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(255,255,255,.04);
+    border:1px solid var(--line);border-radius:11px;padding:10px 14px;margin-bottom:13px}
+.verb{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:3px 9px;border-radius:6px}
+.verb.post{background:rgba(31,168,119,.16);color:var(--mint);border:1px solid rgba(31,168,119,.32)}
+.verb.get{background:rgba(12,110,119,.2);color:#8FE3EC;border:1px solid rgba(23,162,176,.32)}
+.ep .path{font-family:var(--mono);font-size:13px;color:var(--ink);word-break:break-all}
+
+/* ─── Flow ─── */
+.flow{display:grid;gap:9px;margin-bottom:16px}
+.step{display:flex;gap:13px;align-items:flex-start;background:rgba(255,255,255,.03);
+      border:1px solid var(--line-2);border-radius:12px;padding:12px 15px}
+.step .n{flex-shrink:0;width:24px;height:24px;border-radius:7px;background:var(--plum-tint);
+         border:1px solid rgba(23,162,176,.3);color:#8FE3EC;display:grid;place-items:center;
+         font-family:var(--mono);font-size:11.5px;font-weight:700}
+.step div>b{display:block;font-size:14px;color:var(--ink);margin-bottom:2px}
+.step div>span{font-size:13.5px;color:var(--ink-soft)}
+
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;
+       font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+
+/* ─── Responsive — keep at the end; these override the rules above and CSS
+       takes the last matching declaration, so moving them up silently breaks
+       the mobile layout. ─── */
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr;gap:0;padding:22px 18px 70px}
+  #navToggle{display:grid}
+  .side{position:fixed;inset:57px auto 0 0;width:250px;max-height:none;height:calc(100vh - 57px);
+        background:#071318;border-right:1px solid var(--line);padding:18px 14px;z-index:39;
+        transform:translateX(-100%);transition:transform .22s ease;overflow-y:auto}
+  .side.open{transform:translateX(0)}
+  .doc h1{font-size:26px}
+  .doc h2{font-size:19px;margin-top:38px}
+  .tag{display:none}
+}
+@media (max-width:520px){
+  .top{padding:11px 15px;gap:10px}
+  .doc h1{font-size:23px}
+  .code pre{font-size:11.5px;padding:12px 13px}
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <button id="navToggle" aria-label="Menu">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  </button>
+  <a href="/" class="brand"><span class="logo">K</span> KassifyPay</a>
+  <span class="tag">Docs</span>
+  <span class="top-spacer"></span>
+  <a href="/dashboard" class="act">Dashboard →</a>
+</div>
+
+<div class="shell">
+  <nav class="side" id="side">
+    <h4>Start</h4>
+    <a href="#intro">Introduction</a>
+    <a href="#keys">API keys &amp; modes</a>
+    <a href="#quickstart">Quick start</a>
+    <h4>Reference</h4>
+    <a href="#amounts">Amounts &amp; fees</a>
+    <a href="#create">Create a charge</a>
+    <a href="#retrieve">Retrieve a charge</a>
+    <a href="#verify">Verify a payment</a>
+    <a href="#webhooks">Webhooks</a>
+    <h4>More</h4>
+    <a href="#partners">Partner attribution</a>
+    <a href="#links">Payment links</a>
+    <a href="#errors">Errors &amp; limits</a>
+    <a href="#golive">Go-live checklist</a>
+  </nav>
+
+  <main class="doc">
+
+    <h1 id="intro">KassifyPay API</h1>
+    <p class="lead">Accept mobile money and card payments in Ghana. You create a charge from your server, send the customer to our checkout, and we tell you when the money has arrived.</p>
+
+    <div class="note"><b>Base URL</b>
+      <code>https://cowrie-gateway.onrender.com</code> — every path below is relative to it. All requests and responses are JSON.
+    </div>
+
+    <h3>How a payment works</h3>
+    <div class="flow">
+      <div class="step"><span class="n">1</span><div><b>Create a charge</b><span>Your server calls <code>POST /api/charges</code> with the amount. You get back a <code>reference</code> and a <code>checkout_url</code>.</span></div></div>
+      <div class="step"><span class="n">2</span><div><b>Send the customer to the checkout</b><span>Redirect them to <code>checkout_url</code>. They choose mobile money or card and approve the payment on their phone.</span></div></div>
+      <div class="step"><span class="n">3</span><div><b>We return them to you</b><span>When they finish, we send them to the <code>callbackUrl</code> you supplied.</span></div></div>
+      <div class="step"><span class="n">4</span><div><b>Confirm before you credit anything</b><span>A webhook arrives at your endpoint, and you can call <code>GET /api/charges/:reference/verify</code>. Never credit an account on the redirect alone.</span></div></div>
+    </div>
+
+    <h2 id="keys">API keys &amp; modes</h2>
+    <p>Your keys are in the dashboard under <strong>API keys</strong>. There are four, in two pairs:</p>
+    <div class="tw"><table>
+      <thead><tr><th>Key</th><th>Where it belongs</th></tr></thead>
+      <tbody>
+        <tr><td><code>cowrie_sk_live_…</code></td><td><strong>Secret, live.</strong> Server-side only. This one takes real money.</td></tr>
+        <tr><td><code>cowrie_pk_live_…</code></td><td>Publishable, live.</td></tr>
+        <tr><td><code>cowrie_sk_test_…</code></td><td>Secret, test.</td></tr>
+        <tr><td><code>cowrie_pk_test_…</code></td><td>Publishable, test.</td></tr>
+      </tbody>
+    </table></div>
+
+    <p>Send the key on every API call, either way:</p>
+    <div class="code"><div class="code-head"><span class="code-lang">http</span><span class="sp"></span><button class="copy">Copy</button></div><pre>X-Public-Key: cowrie_sk_live_xxxxxxxxxxxxxxxx
+
+# or
+Authorization: Bearer cowrie_sk_live_xxxxxxxxxxxxxxxx</pre></div>
+
+    <p><strong>The key decides the mode.</strong> There is no separate mode parameter — a key containing <code>_live_</code> creates live charges, anything else creates test charges.</p>
+
+    <div class="note warn"><b>Test mode cannot take payments</b>
+      Our payment provider has no sandbox, so a test charge can be created but never paid — the checkout will refuse it. Test keys are for wiring up the request and response shapes. To test the full flow end to end, use a live key and a small real amount, then refund it out of band.
+    </div>
+
+    <div class="note warn"><b>Live keys need a verified account</b>
+      Until your business is verified in the dashboard, live keys return <code>403</code>. Complete verification before you go live, not on launch day.
+    </div>
+
+    <h2 id="quickstart">Quick start</h2>
+    <p>Charge a customer GHS 50 and send them to the checkout.</p>
+
+    <div class="code"><div class="code-head"><span class="code-lang">cURL</span><span class="sp"></span><button class="copy">Copy</button></div><pre>curl -X POST https://cowrie-gateway.onrender.com/api/charges \
+  -H "Authorization: Bearer cowrie_sk_live_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order-10482" \
+  -d '{
+    "amount": 5000,
+    "currency": "GHS",
+    "email": "ama@example.com",
+    "callbackUrl": "https://yoursite.com/payment/return",
+    "metadata": { "orderId": "10482" }
+  }'</pre></div>
+
+    <div class="code"><div class="code-head"><span class="code-lang">Response 201</span><span class="sp"></span><button class="copy">Copy</button></div><pre>{
+  "charge": {
+    "reference":   "cwr_9f2a1c7b4e8d3a60",
+    "amount":      5000,       // what you receive, in pesewas
+    "feeAmount":   150,        // our fee, added on top
+    "totalAmount": 5150,       // what the customer pays
+    "currency":    "GHS",
+    "status":      "pending",
+    "mode":        "live"
+  },
+  "checkout_url": "https://cowrie-gateway.onrender.com/checkout?reference=cwr_9f2a1c7b4e8d3a60"
+}</pre></div>
+
+    <div class="code"><div class="code-head"><span class="code-lang">Node.js</span><span class="sp"></span><button class="copy">Copy</button></div><pre>const res = await fetch('https://cowrie-gateway.onrender.com/api/charges', {
+  method: 'POST',
+  headers: {
+    'Authorization':   `Bearer ${process.env.KASSIFY_SECRET_KEY}`,
+    'Content-Type':    'application/json',
+    'Idempotency-Key': `order-${order.id}`,
+  },
+  body: JSON.stringify({
+    amount:      Math.round(order.total * 100),   // pesewas, not cedis
+    currency:    'GHS',
+    email:       customer.email,
+    callbackUrl: 'https://yoursite.com/payment/return',
+    metadata:    { orderId: order.id },
+  }),
+});
+
+const { charge, checkout_url } = await res.json();
+await orders.update(order.id, { chargeReference: charge.reference });
+return redirect(checkout_url);</pre></div>
+
+    <div class="code"><div class="code-head"><span class="code-lang">PHP</span><span class="sp"></span><button class="copy">Copy</button></div><pre>$ch = curl_init('https://cowrie-gateway.onrender.com/api/charges');
+curl_setopt_array($ch, [
+  CURLOPT_POST           =&gt; true,
+  CURLOPT_RETURNTRANSFER =&gt; true,
+  CURLOPT_HTTPHEADER     =&gt; [
+    'Authorization: Bearer ' . getenv('KASSIFY_SECRET_KEY'),
+    'Content-Type: application/json',
+    'Idempotency-Key: order-' . $order['id'],
+  ],
+  CURLOPT_POSTFIELDS =&gt; json_encode([
+    'amount'      =&gt; (int) round($order['total'] * 100),
+    'currency'    =&gt; 'GHS',
+    'email'       =&gt; $customer['email'],
+    'callbackUrl' =&gt; 'https://yoursite.com/payment/return',
+    'metadata'    =&gt; ['orderId' =&gt; $order['id']],
+  ]),
+]);
+$body = json_decode(curl_exec($ch), true);
+header('Location: ' . $body['checkout_url']);</pre></div>
+
+    <h2 id="amounts">Amounts &amp; fees</h2>
+    <div class="note"><b>Amounts are in minor units</b>
+      Pesewas, not cedis. <strong>GHS 50.00 is <code>5000</code></strong>. Sending <code>50</code> charges fifty pesewas. Minimum <code>100</code> (GHS 1), maximum <code>100000000</code> (GHS 1,000,000).
+    </div>
+
+    <p>Our fee is <strong>added on top</strong> of your amount rather than taken out of it. You are paid exactly what you asked for; the customer covers the fee.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Field</th><th>Meaning</th><th>Example at 3%</th></tr></thead>
+      <tbody>
+        <tr><td><code>amount</code></td><td>What you receive</td><td><code>5000</code> — GHS 50.00</td></tr>
+        <tr><td><code>feeAmount</code></td><td>Our fee</td><td><code>150</code> — GHS 1.50</td></tr>
+        <tr><td><code>totalAmount</code></td><td>What the customer is charged</td><td><code>5150</code> — GHS 51.50</td></tr>
+        <tr><td><code>feeBps</code></td><td>Rate applied, in basis points</td><td><code>300</code> — 3%</td></tr>
+      </tbody>
+    </table></div>
+    <p>Your rate is set on your account. Each charge records the rate it was priced at, so a rate change never alters charges already created. Reconcile against <code>amount</code> — that is your money.</p>
+
+    <h2 id="create">Create a charge</h2>
+    <div class="ep"><span class="verb post">POST</span><span class="path">/api/charges</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>amount</code></td><td>integer</td><td><strong>Required</strong> unless <code>openAmount</code>. Minor units.</td></tr>
+        <tr><td><code>currency</code></td><td>string</td><td>Defaults to <code>GHS</code>.</td></tr>
+        <tr><td><code>email</code></td><td>string</td><td>Customer email. Optional.</td></tr>
+        <tr><td><code>callbackUrl</code></td><td>string</td><td>Where we return the customer after the checkout.</td></tr>
+        <tr><td><code>metadata</code></td><td>object</td><td>Anything you want back later — order id, user id. Returned on the charge and in webhooks.</td></tr>
+        <tr><td><code>openAmount</code></td><td>boolean</td><td><code>true</code> lets the customer type the amount at the checkout. Omit <code>amount</code>.</td></tr>
+        <tr><td><code>reference</code></td><td>string</td><td>Your own reference. We generate one if you do not.</td></tr>
+        <tr><td><code>partner</code></td><td>string</td><td>Partner code, if this deposit was brought in by one. See <a href="#partners">Partner attribution</a>.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Idempotency</h3>
+    <p>Send an <code>Idempotency-Key</code> header — your order id works well. If the same key arrives twice we return the original charge with <code>200</code> instead of creating a second one. Without it, a retried request charges the customer twice.</p>
+
+    <h2 id="retrieve">Retrieve a charge</h2>
+    <div class="ep"><span class="verb get">GET</span><span class="path">/api/charges/:reference</span></div>
+    <p>Public — no key required, since the checkout page itself uses it. Returns only what a payment page needs to display.</p>
+    <div class="code"><div class="code-head"><span class="code-lang">Response 200</span><span class="sp"></span><button class="copy">Copy</button></div><pre>{
+  "charge": {
+    "reference":       "cwr_9f2a1c7b4e8d3a60",
+    "amount":          5000,
+    "feeAmount":       150,
+    "totalAmount":     5150,
+    "currency":        "GHS",
+    "status":          "pending",     // pending | success | failed
+    "method":          "mobile_money",
+    "openAmount":      false,
+    "merchantName":    "Your Business",
+    "merchantWebsite": "https://yoursite.com"
+  }
+}</pre></div>
+    <div class="note warn"><b>Treat the reference as a secret</b>
+      Anyone holding it can read the charge. Do not put it in a public page, a URL you share, or an email subject line.
+    </div>
+
+    <h2 id="verify">Verify a payment</h2>
+    <div class="ep"><span class="verb get">GET</span><span class="path">/api/charges/:reference/verify</span></div>
+    <p>Re-checks the payment with the provider and returns the current charge. This is the authoritative answer — call it before you credit anything.</p>
+
+    <div class="note warn"><b>Never trust the redirect</b>
+      A customer landing on your <code>callbackUrl</code> proves nothing: they can reach that URL by typing it. Always confirm with <code>verify</code> or a webhook before releasing goods or crediting a wallet.
+    </div>
+
+    <div class="code"><div class="code-head"><span class="code-lang">Node.js — on your return page</span><span class="sp"></span><button class="copy">Copy</button></div><pre>const ref = req.query.reference;
+const r = await fetch(
+  `https://cowrie-gateway.onrender.com/api/charges/${ref}/verify`
+);
+const { charge } = await r.json();
+
+if (charge.status === 'success') {
+  // Check the amount too — never take the status alone.
+  const order = await orders.byChargeReference(ref);
+  if (charge.amount >= order.totalMinor &amp;&amp; !order.paid) {
+    await orders.markPaid(order.id);
+  }
+}</pre></div>
+
+    <h2 id="webhooks">Webhooks</h2>
+    <p>Set your endpoint in the dashboard under <strong>Webhooks</strong>. We POST to it when a charge reaches a final state.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Event</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td><code>charge.success</code></td><td>Payment confirmed. The money is yours.</td></tr>
+        <tr><td><code>charge.failed</code></td><td>Payment failed or was never approved.</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="code"><div class="code-head"><span class="code-lang">Request we send</span><span class="sp"></span><button class="copy">Copy</button></div><pre>POST https://yoursite.com/webhooks/kassifypay
+Content-Type: application/json
+cowrie-signature: 9c1f…   (HMAC-SHA256 hex of the exact body)
+
+{
+  "id":        "evt_a1b2c3d4e5f6",
+  "type":      "charge.success",
+  "createdAt": 1785859573641,
+  "data":      { /* the full charge, including your metadata */ }
+}</pre></div>
+
+    <h3>Verify the signature</h3>
+    <p>Sign the <strong>raw request body</strong> with your webhook secret (dashboard → <strong>Webhooks</strong>) and compare. Anyone can POST to your endpoint; the signature is what makes it trustworthy.</p>
+
+    <div class="code"><div class="code-head"><span class="code-lang">Node.js / Express</span><span class="sp"></span><button class="copy">Copy</button></div><pre>const crypto = require('crypto');
+
+// The raw body is required — JSON.stringify of a parsed object will not match.
+app.post('/webhooks/kassifypay',
+  express.raw({ type: 'application/json' }),
+  (req, res) =&gt; {
+    const expected = crypto
+      .createHmac('sha256', process.env.KASSIFY_WEBHOOK_SECRET)
+      .update(req.body)
+      .digest('hex');
+
+    const got = req.get('cowrie-signature') || '';
+    const ok = expected.length === got.length &amp;&amp;
+      crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
+    if (!ok) return res.status(400).end();
+
+    const event = JSON.parse(req.body);
+    if (event.type === 'charge.success') {
+      creditOrder(event.data.metadata.orderId, event.data.amount);
+    }
+    res.sendStatus(200);          // reply fast; we time out at 10s
+  });</pre></div>
+
+    <div class="code"><div class="code-head"><span class="code-lang">PHP</span><span class="sp"></span><button class="copy">Copy</button></div><pre>$raw = file_get_contents('php://input');
+$expected = hash_hmac('sha256', $raw, getenv('KASSIFY_WEBHOOK_SECRET'));
+$got = $_SERVER['HTTP_COWRIE_SIGNATURE'] ?? '';
+
+if (!hash_equals($expected, $got)) { http_response_code(400); exit; }
+
+$event = json_decode($raw, true);
+if ($event['type'] === 'charge.success') {
+    credit_order($event['data']['metadata']['orderId'], $event['data']['amount']);
+}
+http_response_code(200);</pre></div>
+
+    <div class="note warn"><b>Webhooks are not retried</b>
+      We send once and give up after 10 seconds. If your endpoint is down, that notification is gone. Delivery attempts are logged in the dashboard under <strong>Webhooks</strong>, but you should also reconcile: for any order still unpaid after a few minutes, call <code>verify</code>.
+    </div>
+
+    <div class="note tip"><b>Make your handler idempotent</b>
+      Check whether the order is already paid before crediting. A webhook and your own <code>verify</code> call can both land for the same payment.
+    </div>
+
+    <h3>Requirements for your endpoint</h3>
+    <ul>
+      <li>Must be reachable on the public internet over <code>http</code> or <code>https</code>. Private and internal addresses are refused.</li>
+      <li>Must respond within <strong>10 seconds</strong>. Acknowledge first, do the work afterwards.</li>
+      <li>Any <code>2xx</code> counts as delivered.</li>
+    </ul>
+
+    <h2 id="partners">Partner attribution</h2>
+    <p>If people bring you deposits and earn a share, add their code to the charge you already create. Every deposit carrying it is credited to them, and their earnings are tracked for you.</p>
+    <div class="code"><div class="code-head"><span class="code-lang">JSON</span><span class="sp"></span><button class="copy">Copy</button></div><pre>{
+  "amount":   5000,
+  "currency": "GHS",
+  "partner":  "kwame-mensah",
+  "metadata": { "orderId": "10482", "userId": "u_8891" }
+}</pre></div>
+    <p>The code is read from <code>partner</code>, <code>partnerCode</code>, <code>ref</code>, <code>affiliate</code> or <code>agent</code> — at the top level, inside <code>metadata</code>, or as a query parameter. Use whichever your system already calls it.</p>
+    <div class="note"><b>An unknown code will not fail the payment</b>
+      Losing a real deposit to a typo would be worse than losing the attribution. The charge still goes through, and the unrecognised code is flagged in the console so nobody quietly goes unpaid.
+    </div>
+    <p>Partners can also be given a ready-made link — <code>/p/&lt;code&gt;</code> — which raises a fresh deposit tagged to them on every visit. Ask your account manager to set one up.</p>
+
+    <h2 id="links">Payment links</h2>
+    <p>No code needed. In the dashboard, <strong>Payment links</strong> creates a URL you can send by WhatsApp or SMS. Set a fixed amount, or leave it open for the customer to type one.</p>
+    <div class="note"><b>One link, one payment</b>
+      A payment link is a single charge, spent the moment somebody pays it. For a link you can reuse, use a partner link instead.
+    </div>
+
+    <h2 id="errors">Errors &amp; limits</h2>
+    <p>Errors are JSON with a message written for a person:</p>
+    <div class="code"><div class="code-head"><span class="code-lang">Response 400</span><span class="sp"></span><button class="copy">Copy</button></div><pre>{
+  "error":   "client_error",
+  "message": "amount must be an integer in minor units between 100 and 100000000"
+}</pre></div>
+    <div class="tw"><table>
+      <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>400</code></td><td>Something in your request is wrong. The message says what.</td></tr>
+        <tr><td><code>401</code></td><td>Missing or invalid API key.</td></tr>
+        <tr><td><code>403</code></td><td>Account locked, or a live key on an unverified account.</td></tr>
+        <tr><td><code>404</code></td><td>No charge with that reference.</td></tr>
+        <tr><td><code>409</code></td><td>The charge is no longer pending.</td></tr>
+        <tr><td><code>429</code></td><td>Rate limited. Wait for <code>Retry-After</code> seconds.</td></tr>
+        <tr><td><code>500</code></td><td>Our fault. The body carries a <code>ref</code> — send it to support and we can find the exact failure.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Rate limits</h3>
+    <p>Per IP address, per minute: <strong>200</strong> requests overall, <strong>60</strong> charge creations, <strong>20</strong> payment actions. Back off on <code>429</code> rather than retrying immediately.</p>
+
+    <h2 id="golive">Go-live checklist</h2>
+    <ul>
+      <li>Business verified under <strong>Verification</strong> in the dashboard — live keys return <code>403</code> until it is.</li>
+      <li>Secret key in an environment variable, never in client-side code or version control.</li>
+      <li>Webhook URL set, signature verified, handler idempotent.</li>
+      <li><code>Idempotency-Key</code> on every charge creation.</li>
+      <li>Amounts in <strong>pesewas</strong> — the commonest integration bug is out by a factor of 100.</li>
+      <li>Nothing credited on the redirect alone; always <code>verify</code> or wait for the webhook.</li>
+      <li>A reconciliation job that re-checks anything still pending after a few minutes.</li>
+    </ul>
+
+    <div class="note ok"><b>Need a hand?</b>
+      Message us from the <strong>Support</strong> tab in your dashboard. Include the charge <code>reference</code> or the error <code>ref</code> and we can trace it exactly.
+    </div>
+
+  </main>
+</div>
+
+<footer>KassifyPay — payments for Ghana</footer>
+
+<script>
+/* Copy buttons. Inline handlers are not an option: the page ships with a strict
+   Content-Security-Policy that forbids inline script. */
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var pre = btn.closest('.code').querySelector('pre');
+    navigator.clipboard.writeText(pre.innerText).then(function(){
+      btn.textContent = 'Copied';
+      setTimeout(function(){ btn.textContent = 'Copy'; }, 1600);
+    }).catch(function(){
+      btn.textContent = 'Select manually';
+      setTimeout(function(){ btn.textContent = 'Copy'; }, 2200);
+    });
+  });
+});
+
+/* Sidebar drawer on small screens. */
+var side = document.getElementById('side');
+var tog  = document.getElementById('navToggle');
+tog.addEventListener('click', function(){ side.classList.toggle('open'); });
+side.addEventListener('click', function(e){
+  if (e.target.tagName === 'A') side.classList.remove('open');
+});
+
+/* Highlight the section being read. Falls back silently where
+   IntersectionObserver is missing — the page is perfectly usable without it. */
+if (window.IntersectionObserver) {
+  var links = {};
+  document.querySelectorAll('.side a').forEach(function(a){
+    links[a.getAttribute('href').slice(1)] = a;
+  });
+  var seen = new Set();
+  var obs = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if (en.isIntersecting) seen.add(en.target.id); else seen.delete(en.target.id);
+    });
+    var ids = Object.keys(links).filter(function(id){ return seen.has(id); });
+    if (!ids.length) return;
+    Object.values(links).forEach(function(a){ a.classList.remove('on'); });
+    if (links[ids[0]]) links[ids[0]].classList.add('on');
+  }, { rootMargin: '-70px 0px -65% 0px' });
+  document.querySelectorAll('.doc [id]').forEach(function(el){ obs.observe(el); });
+}
+</script>
+</body>
+</html>
