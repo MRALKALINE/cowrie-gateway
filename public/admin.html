@@ -1359,13 +1359,30 @@ async function renderConfirmations(el){
   /* Payments MCASH told us about, newest first. Verified = the notification's
      signature checked out against our secret key. Matched = it was tied to a
      charge (and possibly settled it automatically). */
+  /* Confirm-in-place: a verified successful payment that was not matched
+     automatically gets a button tying it to an open charge with the same
+     amount — a dropdown when several qualify. */
+  function chargeCell(p,i){
+    if(p.matchedReference) return esc(p.matchedReference)+(p.autoSettled?' <span style="color:#1A9B6E">auto-confirmed</span>':' <span style="color:#1A9B6E">confirmed</span>');
+    if(p.verified && p.status==='success'){
+      const minor = Math.round(parseFloat(p.amount||'0')*100);
+      const cands = pending.filter(t => (t.totalAmount!=null?t.totalAmount:(t.amount||0)) === minor);
+      if(!cands.length) return '<span style="color:var(--muted)">no matching charge</span>';
+      const picker = cands.length===1
+        ? `<span style="font-family:var(--mono);font-size:11px">${esc(cands[0].reference)}</span>`
+        : `<select id="ipnSel_${i}" style="font-size:11px;max-width:150px">${cands.map(c=>`<option value="${esc(c.reference)}">${esc(c.reference)}</option>`).join('')}</select>`;
+      return `<span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">${picker}
+        <button class="btn primary sm ipnApply" data-id="${esc(p.id||'')}" data-i="${i}" data-ref="${cands.length===1?esc(cands[0].reference):''}">Confirm ✓</button></span>`;
+    }
+    return '<span style="color:var(--muted)">unmatched</span>';
+  }
   function mcashPanel(){
     if(!mcashPayments.length) return '';
-    const rows = mcashPayments.map(p=>`<tr>
+    const rows = mcashPayments.map((p,i)=>`<tr>
       <td data-label="Amount" style="font-family:var(--mono);font-weight:800">${esc(p.currency||'GHS')} ${esc(p.amount||'—')}</td>
       <td data-label="Status">${statusTag(p.status==='success'?'success':(p.status||'pending'))}</td>
       <td data-label="Signature">${p.verified?`<span class="badge" style="background:rgba(26,155,110,.14);color:#1A9B6E;border-color:rgba(26,155,110,.3)">Signed ✓</span>`:`<span class="badge" style="background:rgba(224,161,46,.14);color:#E0A12E;border-color:rgba(224,161,46,.3)">Unverified</span>`}</td>
-      <td data-label="Charge" style="font-family:var(--mono);font-size:11px">${p.matchedReference?esc(p.matchedReference)+(p.autoSettled?' <span style="color:#1A9B6E">auto-confirmed</span>':''):'<span style="color:var(--muted)">unmatched</span>'}</td>
+      <td data-label="Charge" style="font-family:var(--mono);font-size:11px">${chargeCell(p,i)}</td>
       <td data-label="When" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(p.at)}</td>
     </tr>`).join('');
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:18px">
@@ -1375,6 +1392,19 @@ async function renderConfirmations(el){
       </div>
       <table class="table"><thead><tr><th>Amount</th><th>Status</th><th>Signature</th><th>Charge</th><th>When</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`;
+  }
+
+  function bindIpnApply(){
+    el.querySelectorAll('.ipnApply').forEach(btn=>btn.addEventListener('click', async function(){
+      const sel = document.getElementById('ipnSel_'+this.dataset.i);
+      const reference = this.dataset.ref || (sel && sel.value);
+      if(!reference || !this.dataset.id) return;
+      this.disabled = true; this.textContent = 'Saving…';
+      try{
+        await API.post('/api/admin/mcash-payments/'+encodeURIComponent(this.dataset.id)+'/apply', {reference});
+        renderConfirmations(el);
+      }catch(err){ this.disabled = false; this.textContent = 'Confirm ✓'; alert(err.message); }
+    }));
   }
 
   function draw(){
@@ -1387,6 +1417,7 @@ async function renderConfirmations(el){
         <h3 style="font-size:17px;margin-bottom:8px">All caught up</h3>
         <p style="color:var(--muted);font-size:14px">No payments waiting for confirmation right now.</p>
       </div>`;
+      bindIpnApply();
       return;
     }
     el.innerHTML = mcashPanel()+`
@@ -1396,6 +1427,7 @@ async function renderConfirmations(el){
       <div style="display:flex;flex-direction:column;gap:10px">
         ${pending.map((t,i)=>confCard(t,i)).join('')}
       </div>`;
+    bindIpnApply();
     pending.forEach((t, i)=>{
       const btn = document.getElementById('confPay_'+i);
       if(!btn) return;

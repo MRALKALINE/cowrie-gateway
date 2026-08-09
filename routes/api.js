@@ -1966,6 +1966,7 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
   console.log('[MCASH IPN]', JSON.stringify({ identifier, claimed: body.status }));
 
   const record = {
+    id: genId('ipn_'),
     at: Date.now(),
     identifier,
     status: body.status != null ? String(body.status) : null,
@@ -2007,14 +2008,15 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
     const candidates = (await store.charges.pendingPaylink())
       .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
       .filter((c) => fees.payableAmount(c) === mcash.toMinor(amountRaw));
+    record.candidates = candidates.length;
     if (candidates.length === 1) {
       charge = candidates[0];
       await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
       await emitWebhookIfTerminal(charge);
       record.matchedReference = charge.reference;
       record.autoSettled = charge.status === 'success';
-    } else if (candidates.length > 1) {
-      console.log('[MCASH IPN] ambiguous amount — left for manual confirmation', JSON.stringify({ amount: amountRaw, candidates: candidates.length }));
+    } else {
+      console.log('[MCASH IPN] not auto-confirmed — needs manual match', JSON.stringify({ amount: amountRaw, candidates: candidates.length }));
     }
   }
 
@@ -2023,7 +2025,45 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
 }));
 
 router.get('/admin/mcash-payments', requireAdminAuth, ah(async (req, res) => {
-  res.json({ payments: (await store.settings.get('mcash_ipns')) || [] });
+  const list = (await store.settings.get('mcash_ipns')) || [];
+  /* Records written before ids existed get one on first read, so the apply
+     route below can always address them. */
+  let changed = false;
+  for (const p of list) { if (!p.id) { p.id = genId('ipn_'); changed = true; } }
+  if (changed) await store.settings.set('mcash_ipns', list);
+  res.json({ payments: list });
+}));
+
+/* One-click confirmation from the admin console: applies a recorded MCASH
+   payment to a specific charge. Restricted to signature-verified successful
+   payments whose amount matches the charge exactly — an admin who wants to
+   override those guards can still use the plain mark-paid route. */
+router.post('/admin/mcash-payments/:id/apply', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const list = (await store.settings.get('mcash_ipns')) || [];
+  const rec = list.find((p) => p.id === req.params.id);
+  if (!rec) { const e = new Error('Payment record not found.'); e.status = 404; throw e; }
+  if (!rec.verified || mcash.mapStatus(rec.status) !== 'success') {
+    const e = new Error('Only signature-verified successful payments can be applied.'); e.status = 400; throw e;
+  }
+  if (rec.matchedReference) { const e = new Error('This payment is already applied to a charge.'); e.status = 409; throw e; }
+
+  const charge = await store.charges.byReference(String((req.body || {}).reference || ''));
+  if (!charge) { const e = new Error('Charge not found.'); e.status = 404; throw e; }
+  if (charge.status === 'success' || charge.status === 'failed') {
+    const e = new Error('That charge is already settled.'); e.status = 409; throw e;
+  }
+  if (mcash.toMinor(rec.amount) !== fees.payableAmount(charge)) {
+    const e = new Error('The payment amount does not match this charge.'); e.status = 400; throw e;
+  }
+
+  await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, rec.status, {
+    raw: { amount: rec.amount, currency: rec.currency, payment_trx_id: rec.transactionId },
+  }));
+  await emitWebhookIfTerminal(charge);
+  rec.matchedReference = charge.reference;
+  rec.appliedAt = Date.now();
+  await store.settings.set('mcash_ipns', list);
+  res.json({ ok: true, charge: { reference: charge.reference, status: charge.status } });
 }));
 
 /* ========================= KYC ========================= */
