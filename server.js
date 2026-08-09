@@ -236,11 +236,21 @@ async function loadGatewaySettings() {
       livePublicKey: existingM.livePublicKey || mcashEnv.livePublicKey,
       liveSecretKey: existingM.liveSecretKey || mcashEnv.liveSecretKey,
     };
-    gs.installed = gs.installed || [];
-    if (!gs.installed.includes('mcash')) gs.installed.push('mcash');
-    if (!gs.activeGateway || gs.activeGateway === 'nalopay') gs.activeGateway = 'mcash';
     await store.settings.set('gateways', gs);
     console.log('  ✓ MCASH env-var credentials synced to dashboard');
+  }
+
+  /* MCASH replaced Nalopay as the gateway. The pay-link needs no credentials,
+     so this cannot depend on env keys being present — but it runs only once,
+     so an admin who later deliberately toggles back to Nalopay is not fought
+     with on every restart. */
+  if ((!gs.activeGateway || gs.activeGateway === 'nalopay') && !gs.mcashMigrated) {
+    gs.installed = gs.installed || [];
+    if (!gs.installed.includes('mcash')) gs.installed.push('mcash');
+    gs.activeGateway = 'mcash';
+    gs.mcashMigrated = true;
+    await store.settings.set('gateways', gs);
+    console.log('  ✓ Active gateway switched to MCASH');
   }
 
   const savedM = gs.gateways && gs.gateways.mcash;
