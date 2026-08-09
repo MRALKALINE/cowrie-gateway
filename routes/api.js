@@ -1691,9 +1691,27 @@ async function payWithMcash(req, res) {
        (notify-transfer), and settlement happens exclusively through the
        admin console's mark-paid after checking the MCASH account — the same
        trust model as the static bank-transfer method. */
+    /* Amount fingerprint. The IPN for a pay-link payment carries nothing that
+       ties it to a charge except the amount, so the amount must identify the
+       charge uniquely. When another open pay-link charge already expects the
+       same figure, this payer is asked for a few pesewas more (20.01, 20.02…)
+       — the surcharge is at most GHS 0.99 and makes auto-confirmation
+       unambiguous. A repeat attempt keeps its fingerprint so the payer never
+       sees the figure change between retries. */
+    const payable = fees.payableAmount(charge);
+    const open = (await store.charges.pendingPaylink()).filter((c) => c.reference !== charge.reference);
+    const taken = new Set(open.map((c) => c.mcashPayAmount || fees.payableAmount(c)));
+    let payAmount = (charge.mcashPayAmount && !taken.has(charge.mcashPayAmount)) ? charge.mcashPayAmount : payable;
+    if (taken.has(payAmount)) {
+      for (let delta = 1; delta <= 99; delta++) {
+        if (!taken.has(payable + delta)) { payAmount = payable + delta; break; }
+      }
+    }
+
     await saveChargeWithRetry(charge, (c) => {
       c.method = method;
       c.mcashPaylink = true;
+      c.mcashPayAmount = payAmount;
       c.attemptCount = (c.attemptCount || 0) + 1;
       c.lastAttemptAt = Date.now();
       c.updatedAt = Date.now();
@@ -1704,7 +1722,7 @@ async function payWithMcash(req, res) {
       next: 'paylink',
       detail: {
         url: mcash.paylinkUrl(),
-        amountMajor: mcash.toMajor(fees.payableAmount(charge)),
+        amountMajor: mcash.toMajor(payAmount),
         currency: charge.currency || 'GHS',
         reference: charge.reference,
       },
@@ -1904,9 +1922,40 @@ async function confirmWithNalopay(charge, orderId) {
   return result;
 }
 
+/* A pay-link IPN can land before its charge is flagged, or while a stale
+   same-amount charge was still open. The checkout polls while the payer is on
+   the waiting screen, so every poll retries the match — under exactly the
+   webhook's uniqueness rules, in both directions: one unclaimed payment for
+   the amount, and one open charge expecting it. */
+async function settleFromRecordedIpns(charge) {
+  const expect = charge.mcashPayAmount || fees.payableAmount(charge);
+  const list = (await store.settings.get('mcash_ipns')) || [];
+  const matches = list.filter((p) => p.verified && !p.matchedReference &&
+    mcash.mapStatus(p.status) === 'success' && mcash.toMinor(p.amount) === expect);
+  if (matches.length !== 1) return;
+  const contenders = (await store.charges.pendingPaylink())
+    .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === expect);
+  if (contenders.length !== 1 || contenders[0].reference !== charge.reference) return;
+
+  const rec = matches[0];
+  await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, rec.status, {
+    raw: { amount: rec.amount, currency: rec.currency, payment_trx_id: rec.transactionId },
+  }));
+  await emitWebhookIfTerminal(charge);
+  if (charge.status === 'success') {
+    rec.matchedReference = charge.reference;
+    rec.autoSettled = true;
+    await store.settings.set('mcash_ipns', list);
+  }
+}
+
 router.get('/charges/:reference/poll', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
   if (charge.status === 'success' || charge.status === 'failed') return res.json({ charge, next: charge.status });
+  if (charge.mcashPaylink) {
+    await settleFromRecordedIpns(charge);
+    return res.json({ charge, next: charge.status === 'pending' ? 'pending' : charge.status });
+  }
   const result = await confirmWithNalopay(charge);
   res.json({ charge, next: result.next });
 }));
@@ -2007,7 +2056,7 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
     const cutoff = Date.now() - 48 * 3600_000;
     const candidates = (await store.charges.pendingPaylink())
       .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
-      .filter((c) => fees.payableAmount(c) === mcash.toMinor(amountRaw));
+      .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === mcash.toMinor(amountRaw));
     record.candidates = candidates.length;
     if (candidates.length === 1) {
       charge = candidates[0];
@@ -2052,7 +2101,7 @@ router.post('/admin/mcash-payments/:id/apply', writeLimiter, requireAdminAuth, a
   if (charge.status === 'success' || charge.status === 'failed') {
     const e = new Error('That charge is already settled.'); e.status = 409; throw e;
   }
-  if (mcash.toMinor(rec.amount) !== fees.payableAmount(charge)) {
+  if (mcash.toMinor(rec.amount) !== (charge.mcashPayAmount || fees.payableAmount(charge))) {
     const e = new Error('The payment amount does not match this charge.'); e.status = 400; throw e;
   }
 

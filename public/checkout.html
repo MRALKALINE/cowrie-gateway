@@ -567,14 +567,17 @@ function renderStaticTransfer(b){
 function renderPaylink(b){
   const d=S.paylinkDetail||{};
   const ref=S.charge?S.charge.reference:'—';
+  /* The amount the payer must enter is the server's figure, not the charge
+     amount — it can carry a few extra pesewas that identify this payment. */
+  const disp=d.amountMajor?esc((d.currency||'GHS')+' '+d.amountMajor):fmt(amount(),ccy());
   b.innerHTML=`<button class="back" id="back">← Back</button>
     <div class="detail-box">
-      <div class="drow"><span class="k">AMOUNT</span><span class="v">${fmt(amount(),ccy())} <button class="copy" data-c="${esc(d.amountMajor||'')}">copy</button></span></div>
+      <div class="drow"><span class="k">AMOUNT</span><span class="v">${disp} <button class="copy" data-c="${esc(d.amountMajor||'')}">copy</button></span></div>
       <div class="drow"><span class="k">REFERENCE</span><span class="v" style="font-family:var(--mono);font-size:12px">${esc(ref)} <button class="copy" data-c="${esc(ref)}">copy</button></span></div>
     </div>
     <a href="${esc(d.url||'#')}" target="_blank" rel="noopener" class="pay" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;margin-top:14px;background:linear-gradient(135deg,#7367f0,#5e50ee)">💳 Pay with MCASH</a>
     <div class="hint" style="justify-content:center;flex-direction:column;gap:5px;text-align:center;margin-top:12px">
-      <span>The payment page opens in a new tab. Enter exactly <b>${fmt(amount(),ccy())}</b> and put the reference above in the note / description.</span>
+      <span>The payment page opens in a new tab. Enter exactly <b>${disp}</b> — this exact figure is how we recognise your payment — and put the reference above in the note / description.</span>
       <span style="color:var(--faint)">Your order will be confirmed once we receive your payment.</span>
     </div>
     <button class="pay" id="paidBtn" style="margin-top:14px;background:linear-gradient(135deg,#1A9B6E,#15825d)">I've made the payment ✓</button>`;
