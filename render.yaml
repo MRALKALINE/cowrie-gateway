@@ -53,8 +53,21 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
 
-      # Nalopay — all three are required; set them in the Render dashboard.
-      # There is no test/live split: these are live credentials.
+      # MCASH (app.arkmah.com) — primary gateway. With no keys set, payments
+      # run through the static pay-link (manual confirmation); the API key
+      # pair upgrades to hosted checkout with automatic confirmation.
+      - key: MCASH_PAYLINK_URL
+        value: https://app.arkmah.com/pay-link/ucauuiujzvfi
+      - key: MCASH_PUBLIC_KEY
+        sync: false
+      - key: MCASH_SECRET_KEY
+        sync: false
+      - key: MCASH_TEST_PUBLIC_KEY
+        sync: false
+      - key: MCASH_TEST_SECRET_KEY
+        sync: false
+
+      # Nalopay — fallback gateway, used only when MCASH is not configured.
       - key: NALOPAY_MERCHANT_ID
         sync: false
       - key: NALOPAY_BASIC_AUTH

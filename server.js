@@ -11,6 +11,7 @@ const { migrate } = require('./lib/migrate');
 const { apiKey } = require('./lib/util');
 const { seedAdmins } = require('./lib/admins');
 const nalopay = require('./lib/nalopay');
+const mcash = require('./lib/mcash');
 
 const app = express();
 app.set('trust proxy', true);
@@ -215,6 +216,43 @@ async function loadGatewaySettings() {
     });
     console.log('  ✓ Nalopay credentials loaded from database');
   }
+
+  /* Same sync for MCASH (app.arkmah.com). Its slots map directly: test* is
+     the sandbox pair, live* the live pair. When MCASH has credentials it also
+     takes over as the active gateway unless the admin has explicitly picked
+     something other than Nalopay — MCASH replaces Nalopay as the default. */
+  const mcashEnv = {
+    testPublicKey: process.env.MCASH_TEST_PUBLIC_KEY || '',
+    testSecretKey: process.env.MCASH_TEST_SECRET_KEY || '',
+    livePublicKey: process.env.MCASH_PUBLIC_KEY || '',
+    liveSecretKey: process.env.MCASH_SECRET_KEY || '',
+  };
+  if (Object.values(mcashEnv).some(Boolean)) {
+    gs.gateways = gs.gateways || {};
+    const existingM = gs.gateways.mcash || {};
+    gs.gateways.mcash = {
+      testPublicKey: existingM.testPublicKey || mcashEnv.testPublicKey,
+      testSecretKey: existingM.testSecretKey || mcashEnv.testSecretKey,
+      livePublicKey: existingM.livePublicKey || mcashEnv.livePublicKey,
+      liveSecretKey: existingM.liveSecretKey || mcashEnv.liveSecretKey,
+    };
+    gs.installed = gs.installed || [];
+    if (!gs.installed.includes('mcash')) gs.installed.push('mcash');
+    if (!gs.activeGateway || gs.activeGateway === 'nalopay') gs.activeGateway = 'mcash';
+    await store.settings.set('gateways', gs);
+    console.log('  ✓ MCASH env-var credentials synced to dashboard');
+  }
+
+  const savedM = gs.gateways && gs.gateways.mcash;
+  if (savedM && ((savedM.livePublicKey && savedM.liveSecretKey) || (savedM.testPublicKey && savedM.testSecretKey))) {
+    mcash.configureKeys({
+      livePublicKey: savedM.livePublicKey || '',
+      liveSecretKey: savedM.liveSecretKey || '',
+      testPublicKey: savedM.testPublicKey || '',
+      testSecretKey: savedM.testSecretKey || '',
+    });
+    console.log('  ✓ MCASH credentials loaded from database');
+  }
 }
 
 function enforceProductionSecurity() {
@@ -241,7 +279,11 @@ async function start() {
     const demo = all.filter((m) => m.demo);
     console.log('\n  KassifyPay gateway running');
     console.log(`  -> http://localhost:${cfg.PORT}`);
-    console.log(`  Nalopay: ${nalopay.configured() ? 'configured' : 'NOT CONFIGURED — payments will fail'}`);
+    const mcashState = mcash.configured() ? 'configured' : (mcash.sandboxConfigured() ? 'sandbox only' : 'NOT CONFIGURED');
+    console.log(`  MCASH: ${mcashState} | Nalopay (fallback): ${nalopay.configured() ? 'configured' : 'not configured'}`);
+    if (!mcash.configured() && !mcash.sandboxConfigured() && !nalopay.configured()) {
+      console.log('  ⚠ No payment provider configured — payments will fail');
+    }
     if (demo.length) {
       console.warn(`  ⚠ ${demo.length} demo merchant(s) still present — these accept real payments. Lock or remove them.`);
     }

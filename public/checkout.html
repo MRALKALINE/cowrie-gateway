@@ -253,7 +253,8 @@ function getMethods(){
   if(c==='NGN'){
     return hasStatic ? [['transfer','Bank transfer']] : [['bank','Bank transfer']];
   }
-  if(c==='GHS') return [['card','Card'],['momo','Mobile money']];
+  /* The MCASH pay-link page offers mobile money networks only. */
+  if(c==='GHS') return (PROVIDER==='mcash'&&PAYLINK) ? [['momo','Mobile money']] : [['card','Card'],['momo','Mobile money']];
   const m=[['card','Card']];
   if(hasStatic) m.push(['transfer','Bank transfer']);
   else m.push(['bank','Bank transfer']);
@@ -275,6 +276,14 @@ const ICONS={
   ussd:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h14M5 21h14M7 3v18M17 3v18M9 8h6M9 12h6"/></svg>'
 };
 let TEST_MODE=true;
+/* Which processor the server will route this payment through. MCASH is a
+   hosted redirect for every method, so the momo form drops the phone step —
+   the payer enters their number on MCASH's own page. */
+let PROVIDER='mcash';
+/* True when live payments go through MCASH's static pay-link (no API keys):
+   momo only, the payer enters the amount themselves, and confirmation is
+   manual — so the checkout shows the amount + reference to copy across. */
+let PAYLINK=false;
 
 function tabs(){
   const m=getMethods();
@@ -288,8 +297,19 @@ function formFor(m){
   const info='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--muted)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>';
   /* Card details are entered on Nalopay's hosted page — deliberately not
      collected here, so no card data ever touches this app. */
+  /* MCASH sandbox approvals use a fixed email + verification code. */
+  const mcashTestBanner=TEST_MODE&&PROVIDER==='mcash'?`<div class="test-creds">
+      <strong>⚡ TEST MODE</strong>
+      <div class="tcrow"><span>On the payment page use email <b>test_mode@mail.com</b></span></div>
+      <div class="tcrow"><span>Verification code <b>222666</b></span></div>
+    </div>`:'';
   if(m==='card') return `
+    ${mcashTestBanner}
     <div class="hint">${info}You will be taken to our payment partner's secure page to enter your card details, then returned here.</div>
+    ${payBtn('Continue to secure payment')}`;
+  if(m==='momo'&&PROVIDER==='mcash') return `
+    ${mcashTestBanner}
+    <div class="hint">${info}You will be taken to our payment partner's secure page to pay with MTN MoMo, Telecel Cash or AT Money, then returned here.</div>
     ${payBtn('Continue to secure payment')}`;
   if(m==='momo') return `
     ${TEST_MODE?`<div class="test-creds">
@@ -339,6 +359,12 @@ function bindForm(){
     $('#pay').addEventListener('click',()=>{
       if(!validateName()) return;
       submitPay($('#pay'),'card',{});
+    });
+  }else if(m==='momo'&&PROVIDER==='mcash'){
+    /* Hosted flow — no number to collect here. */
+    $('#pay').addEventListener('click',()=>{
+      if(!validateName()) return;
+      submitPay($('#pay'),'mobile_money',{});
     });
   }else if(m==='momo'){
     $('#prov').querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{S.provider=btn.dataset.p;$('#prov').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===btn));}));
@@ -392,6 +418,7 @@ function handleNext(next,detail){
   /* Nalopay hosted checkout is a full-page redirect — it sets X-Frame-Options,
      so it cannot be framed like the old 3-D Secure step. */
   else if(next==='redirect'&&detail){window.location.href=detail;}
+  else if(next==='paylink'&&detail){S.paylinkDetail=detail;go('paylink');}
   else{go('approve');startPolling();}
 }
 
@@ -483,6 +510,7 @@ function render(){
   else if(S.step==='still_waiting'){b.innerHTML=stateStillWaiting();bindStillWaiting();}
   else if(S.step==='bank')renderBankDetails(b);
   else if(S.step==='static_transfer')renderStaticTransfer(b);
+  else if(S.step==='paylink')renderPaylink(b);
   else if(S.step==='transfer_sent')renderTransferSent(b);
   else if(S.step==='ussd_wait')renderUssdWait(b);
   else if(S.step==='verify_3ds')renderVerify3ds(b);
@@ -532,6 +560,29 @@ function renderStaticTransfer(b){
     <button class="pay" id="paidBtn" style="margin-top:16px;background:linear-gradient(135deg,#1A9B6E,#15825d)">I've made the payment ✓</button>`;
   b.querySelectorAll('.copy').forEach(c=>c.addEventListener('click',()=>{navigator.clipboard&&navigator.clipboard.writeText(c.dataset.c).catch(()=>{});c.textContent='copied!';setTimeout(()=>c.textContent='copy',1200);}));
   $('#back').addEventListener('click',()=>go('form'));
+  $('#paidBtn').addEventListener('click',()=>go('transfer_sent'));
+  startPolling();
+}
+
+function renderPaylink(b){
+  const d=S.paylinkDetail||{};
+  const ref=S.charge?S.charge.reference:'—';
+  b.innerHTML=`<button class="back" id="back">← Back</button>
+    <div class="detail-box">
+      <div class="drow"><span class="k">AMOUNT</span><span class="v">${fmt(amount(),ccy())} <button class="copy" data-c="${esc(d.amountMajor||'')}">copy</button></span></div>
+      <div class="drow"><span class="k">REFERENCE</span><span class="v" style="font-family:var(--mono);font-size:12px">${esc(ref)} <button class="copy" data-c="${esc(ref)}">copy</button></span></div>
+    </div>
+    <a href="${esc(d.url||'#')}" target="_blank" rel="noopener" class="pay" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;margin-top:14px;background:linear-gradient(135deg,#7367f0,#5e50ee)">💳 Pay with MCASH</a>
+    <div class="hint" style="justify-content:center;flex-direction:column;gap:5px;text-align:center;margin-top:12px">
+      <span>The payment page opens in a new tab. Enter exactly <b>${fmt(amount(),ccy())}</b> and put the reference above in the note / description.</span>
+      <span style="color:var(--faint)">Your order will be confirmed once we receive your payment.</span>
+    </div>
+    <button class="pay" id="paidBtn" style="margin-top:14px;background:linear-gradient(135deg,#1A9B6E,#15825d)">I've made the payment ✓</button>`;
+  b.querySelectorAll('.copy').forEach(c=>c.addEventListener('click',()=>{navigator.clipboard&&navigator.clipboard.writeText(c.dataset.c).catch(()=>{});c.textContent='copied!';setTimeout(()=>c.textContent='copy',1200);}));
+  $('#back').addEventListener('click',()=>go('form'));
+  /* Same manual-confirmation path as static bank transfer: notify the admins,
+     show "we'll confirm shortly". Polling keeps running so an admin mark-paid
+     flips this page to success while it is still open. */
   $('#paidBtn').addEventListener('click',()=>go('transfer_sent'));
   startPolling();
 }
@@ -708,7 +759,7 @@ function routeFromCharge(){
 }
 
 async function boot(){
-  const infoP=API.get('/api/info').then(d=>{TEST_MODE=d.testMode!==false;}).catch(()=>{});
+  const infoP=API.get('/api/info').then(d=>{TEST_MODE=d.testMode!==false;if(d.provider)PROVIDER=d.provider;PAYLINK=!!d.paylink;}).catch(()=>{});
   const params=new URLSearchParams(location.search);
   const ref=params.get('reference');
   try{
@@ -716,10 +767,11 @@ async function boot(){
       try{
         const {charge}=await API.get('/api/charges/'+encodeURIComponent(ref));
         S.charge=charge;
-        /* Returning from Nalopay's hosted checkout page. It redirects back to
-           referral_url with no status in the query, so always re-verify when a
-           session was started and the charge is still open. */
-        if(charge.nalopayRef&&charge.status!=='success'&&charge.status!=='failed'){
+        /* Returning from the hosted checkout page (Nalopay or MCASH). Neither
+           puts a status in the query, so always re-verify when a session was
+           started and the charge is still open. For MCASH the poll simply
+           picks up whatever the signed IPN has already settled. */
+        if((charge.nalopayRef||charge.mcashRef)&&charge.status!=='success'&&charge.status!=='failed'){
           try{const {charge:v}=await API.get('/api/charges/'+encodeURIComponent(ref)+'/verify');S.charge=v;}catch(e){}
           if(S.charge.status!=='success'&&S.charge.status!=='failed'){startPolling();}
         }

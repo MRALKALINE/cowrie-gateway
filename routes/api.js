@@ -4,6 +4,7 @@ const store = require('../lib/store');
 const cfg = require('../lib/config');
 const payments = require('../lib/payments');
 const nalopay = require('../lib/nalopay');
+const mcash = require('../lib/mcash');
 const webhooks = require('../lib/webhooks');
 const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert, sendSupportMessageAlert, sendSupportReplyNotice } = require('../lib/email');
 const fx = require('../lib/fx');
@@ -342,12 +343,32 @@ router.get('/me', requireAuth, (req, res) => {
   res.json({ merchant: publicMerchant(req.merchant) });
 });
 
-/* Public config — tells the checkout whether a gateway is wired up.
-   Nalopay publishes no test/live key prefixes, so "not configured" is the
-   only signal we can derive; NALOPAY_TEST_MODE lets you force the banner on. */
-router.get('/info', (req, res) => {
-  res.json({ testMode: !nalopay.configured() || process.env.NALOPAY_TEST_MODE === 'true' });
-});
+/* Which processor actually collects the money. The admin's explicit toggle
+   wins; otherwise MCASH is preferred whenever it has credentials, with
+   Nalopay as the fallback so old deployments keep working unchanged. */
+async function activeProvider() {
+  const gs = (await store.settings.get('gateways')) || {};
+  if (gs.activeGateway === 'nalopay') return 'nalopay';
+  if (gs.activeGateway === 'mcash') return 'mcash';
+  /* The pay-link needs no keys, so MCASH is usable — and the default —
+     even with nothing configured. */
+  return (mcash.configured() || mcash.sandboxConfigured() || mcash.paylinkUrl()) ? 'mcash' : 'nalopay';
+}
+
+/* Public config — tells the checkout whether a gateway is wired up and which
+   provider it is (the MCASH flow is a hosted redirect, so the checkout skips
+   the phone-number step). MCASH_TEST_MODE / NALOPAY_TEST_MODE force the
+   test banner on. */
+router.get('/info', ah(async (req, res) => {
+  const provider = await activeProvider();
+  const testMode = provider === 'mcash'
+    ? ((!mcash.configured() && !mcash.paylinkUrl()) || process.env.MCASH_TEST_MODE === 'true')
+    : (!nalopay.configured() || process.env.NALOPAY_TEST_MODE === 'true');
+  /* paylink tells the checkout live payments go through the static MCASH
+     pay-link (momo only, manual confirmation) rather than hosted checkout. */
+  const paylink = provider === 'mcash' && !mcash.configured() && !!mcash.paylinkUrl();
+  res.json({ testMode, provider, paylink });
+}));
 
 router.put('/me/webhook', writeLimiter, requireAuth, requireActive, ah(async (req, res) => {
   const { url } = req.body || {};
@@ -523,6 +544,7 @@ router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
     openAmount: !!c.openAmount,
     callbackUrl: c.callbackUrl || null,
     nalopayRef: c.nalopayRef || null,   // the checkout uses this to re-verify on return
+    mcashRef: c.mcashRef || null,       // same job for the MCASH hosted flow
     ussdCode: c.ussdCode || null,       // dial-to-approve string, when the network gives one
     failure: c.failure ? { message: c.failure.message } : null,
     auth: c.auth ? { channel: c.auth.channel, network: c.auth.network, brand: c.auth.brand, last4: c.auth.last4 } : null,
@@ -1571,6 +1593,43 @@ function applyNalopayStatus(charge, nalopayStatus, extra = {}) {
   return { next: mapped };
 }
 
+/* MCASH's mirror of applyNalopayStatus. Same rules: terminal states are
+   final, unknown statuses stay pending, and everything the IPN reported is
+   kept on the charge for diagnosis. */
+function applyMcashStatus(charge, mcashStatus, extra = {}) {
+  const mapped = mcash.mapStatus(mcashStatus);
+  const now = Date.now();
+
+  if (extra.raw) {
+    charge.mcash = {
+      status: mcashStatus,
+      transactionId: extra.raw.payment_trx_id || extra.raw.transaction_id || null,
+      charges: extra.raw.charge || extra.raw.charges,
+      reportedAmount: extra.raw.amount,
+      reportedCurrency: extra.raw.currency,
+      observedAt: now,
+    };
+  }
+
+  if (charge.status === 'success' || charge.status === 'failed') {
+    return { next: charge.status };
+  }
+
+  if (mapped === 'success') {
+    charge.status = 'success';
+    charge.paidAt = now;
+    charge.updatedAt = now;
+    charge.resolvedInMs = charge.createdAt ? now - charge.createdAt : null;
+    charge.auth = Object.assign({ provider: 'mcash' }, charge.auth, extra.auth);
+  } else if (mapped === 'failed') {
+    charge.status = 'failed';
+    charge.updatedAt = now;
+    charge.resolvedInMs = charge.createdAt ? now - charge.createdAt : null;
+    charge.failure = { message: extra.message || 'Payment failed', mcashStatus };
+  }
+  return { next: mapped };
+}
+
 /* Upper bound on a single charge, in major units. Guards against overflow
    values (Infinity, 1e400) and typos with an extra three zeros. */
 const MAX_AMOUNT_MAJOR = 1_000_000;
@@ -1599,9 +1658,103 @@ function cowrieRefFromCallback(body) {
   return null;
 }
 
+/* MCASH is hosted-checkout only: mobile money and card are both completed on
+   MCASH's own page, so every method resolves to a redirect. Settlement then
+   arrives via the signed IPN — there is nothing to poll. */
+async function payWithMcash(req, res) {
+  const charge = req.charge;
+  const mode = (charge.mode || 'test') === 'live' ? 'live' : 'test';
+
+  const { method, payerName } = req.body || {};
+  if (payerName && String(payerName).trim()) { charge.payerName = String(payerName).trim(); }
+  if (method !== 'mobile_money' && method !== 'card') {
+    const e = new Error('MCASH supports mobile money and card payments only.');
+    e.status = 400; throw e;
+  }
+
+  /* With API keys the hosted checkout is used; without them, live payments
+     fall back to the static pay-link. */
+  const useApi = mode === 'test' ? mcash.sandboxConfigured() : mcash.configured();
+  if (!useApi) {
+    if (mode === 'test') {
+      const e = new Error(
+        'Test mode is not available — payments are completed on the MCASH pay link, which moves real money. Use your live API key (pk_live_…), or set MCASH_TEST_PUBLIC_KEY / MCASH_TEST_SECRET_KEY sandbox keys.',
+      );
+      e.status = 400; throw e;
+    }
+    if (!mcash.paylinkUrl()) {
+      const e = new Error('MCASH is not configured.'); e.status = 503; throw e;
+    }
+    /* Pay-link flow: the payer types the amount on MCASH's fixed page and
+       nothing comes back to us, so there is NOTHING to settle against. The
+       charge stays pending; the payer's "I've paid" only emails the admins
+       (notify-transfer), and settlement happens exclusively through the
+       admin console's mark-paid after checking the MCASH account — the same
+       trust model as the static bank-transfer method. */
+    await saveChargeWithRetry(charge, (c) => {
+      c.method = method;
+      c.mcashPaylink = true;
+      c.attemptCount = (c.attemptCount || 0) + 1;
+      c.lastAttemptAt = Date.now();
+      c.updatedAt = Date.now();
+      c.auth = { provider: 'mcash', channel: 'paylink' };
+    });
+    return res.json({
+      charge,
+      next: 'paylink',
+      detail: {
+        url: mcash.paylinkUrl(),
+        amountMajor: mcash.toMajor(fees.payableAmount(charge)),
+        currency: charge.currency || 'GHS',
+        reference: charge.reference,
+      },
+    });
+  }
+
+  /* Fresh identifier per attempt, like the Nalopay attemptRef — the IPN echoes
+     it back and byMcashRef() maps it to this charge. It also goes into the
+     IPN's HMAC, so it must be sent verbatim. */
+  const attemptRef = `cwr_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const returnUrl = `${originOf(req)}/checkout?reference=${encodeURIComponent(charge.reference)}`;
+
+  const data = await mcash.initiate({
+    mode,
+    identifier: attemptRef,
+    /* The payer is charged the total — the merchant's amount plus the
+       platform fee. charge.amount stays what the merchant receives. */
+    amountMinor: fees.payableAmount(charge),
+    currency: charge.currency || 'GHS',
+    details: `KassifyPay ${charge.reference}`,
+    customerName: charge.payerName || 'Customer',
+    /* customer_email is required by MCASH; most checkout links carry none. */
+    customerEmail: charge.customerEmail || 'payments@kassifypay.com',
+    ipnUrl: `${originOf(req)}/api/webhooks/mcash`,
+    successUrl: returnUrl,
+    cancelUrl: returnUrl,
+  });
+  console.log('[MCASH /initiate]', JSON.stringify({ ok: data.success === 'ok', http: data.httpStatus, mode }));
+  if (data.success !== 'ok' || !data.url) {
+    const msg = (data.error && (data.error.message || data.error)) || data.message || 'Could not start the payment session.';
+    throw Object.assign(new Error(typeof msg === 'string' ? msg : 'Could not start the payment session.'), { status: 400 });
+  }
+
+  await saveChargeWithRetry(charge, (c) => {
+    c.method = method;
+    c.mcashRef = attemptRef;
+    c.mcashMode = mode;
+    c.attemptCount = (c.attemptCount || 0) + 1;
+    c.lastAttemptAt = Date.now();
+    c.updatedAt = Date.now();
+    c.auth = { provider: 'mcash', channel: method === 'card' ? 'card' : 'mobile_money' };
+  });
+  return res.json({ charge, next: 'redirect', detail: data.url });
+}
+
 router.post('/charges/:reference/pay', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
   if (charge.status === 'success' || charge.status === 'failed') return res.json({ charge, next: charge.status });
+
+  if ((await activeProvider()) === 'mcash') return payWithMcash(req, res);
 
   if (!nalopay.configured()) {
     const e = new Error('Nalopay is not configured.'); e.status = 503; throw e;
@@ -1786,6 +1939,44 @@ router.post('/webhooks/nalopay', webhookLimiter, ah(async (req, res) => {
   res.json({ received: true });
 }));
 
+/* MCASH IPN — the ONLY settlement path for MCASH charges (there is no
+   status-lookup endpoint to re-check against). It is trusted solely because
+   of its HMAC: signature = HMAC-SHA256(amount + identifier, secret key),
+   uppercase hex, which a forger cannot produce without the secret. The amount
+   is additionally checked against our own record so even a validly-signed IPN
+   can never settle a charge for less than the payer owed. */
+router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
+  const body = req.body || {};
+  /* PHP-style form arrays: data[amount]=… parses to body.data.amount under
+     extended urlencoded parsing; fall back to the flat key just in case. */
+  const d = (body.data && typeof body.data === 'object') ? body.data : {};
+  const amountRaw = d.amount != null ? String(d.amount) : String(body['data[amount]'] ?? '');
+  const identifier = body.identifier;
+  console.log('[MCASH IPN]', JSON.stringify({ identifier, claimed: body.status }));
+
+  if (!identifier || !body.signature) return res.json({ received: true });
+
+  const charge = await store.charges.byMcashRef(String(identifier));
+  if (!charge) return res.json({ received: true });
+  if (charge.status === 'success' || charge.status === 'failed') return res.json({ received: true });
+
+  const mode = charge.mcashMode === 'test' ? 'test' : 'live';
+  if (!mcash.verifySignature({ amountRaw, identifier, signature: body.signature, mode })) {
+    console.warn('[MCASH IPN] rejected: bad signature', JSON.stringify({ identifier }));
+    const e = new Error('Invalid signature.'); e.status = 400; throw e;
+  }
+
+  /* The signed amount must be what this charge's payer owed. */
+  if (mcash.toMinor(amountRaw) !== fees.payableAmount(charge)) {
+    console.warn('[MCASH IPN] rejected: amount mismatch', JSON.stringify({ identifier, reported: amountRaw, expected: fees.payableAmount(charge) }));
+    return res.json({ received: true });
+  }
+
+  await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
+  await emitWebhookIfTerminal(charge);
+  res.json({ received: true });
+}));
+
 /* ========================= KYC ========================= */
 
 router.post('/kyc', kycLimiter, requireAuth, requireActive, ah(async (req, res) => {
@@ -1890,6 +2081,9 @@ router.post('/admin/kyc/:merchantId/reject', writeLimiter, requireAdminAuth, ah(
 
 const SUPPORTED_GATEWAYS = [
   /* ── Fully integrated ─────────────────────────────────────────────── */
+  /* MCASH keys come from app.arkmah.com → Developer. test* = sandbox pair,
+     live* = live pair. */
+  { id: 'mcash',         name: 'MCASH (arkmah.com)', status: 'integrated', website: 'https://app.arkmah.com',       fields: { testPublicKey: 'Sandbox public key',                 testSecretKey: 'Sandbox secret key',                  livePublicKey: 'Live public key',                    liveSecretKey: 'Live secret key' } },
   /* Nalopay has no test/live key split — it uses a merchant_id + Basic token
      + secret key triple. The four generic slots are reused; the secret-bearing
      values must sit in *SecretKey fields because only those are masked. */
@@ -1952,6 +2146,22 @@ function nalopayKeysFrom(g) {
   return (keys.merchantId && keys.basicAuth && keys.secretKey) ? keys : null;
 }
 
+/* MCASH uses the four slots as-is; either complete pair is enough (sandbox-
+   only is a valid way to trial the integration). Null keeps env vars in
+   charge, as with Nalopay. */
+function mcashKeysFrom(g) {
+  if (!g) return null;
+  const livePair = g.livePublicKey && g.liveSecretKey;
+  const testPair = g.testPublicKey && g.testSecretKey;
+  if (!livePair && !testPair) return null;
+  return {
+    livePublicKey: g.livePublicKey || '',
+    liveSecretKey: g.liveSecretKey || '',
+    testPublicKey: g.testPublicKey || '',
+    testSecretKey: g.testSecretKey || '',
+  };
+}
+
 function maskSecret(val) {
   if (!val || val.length < 8) return val || '';
   return val.slice(0, 8) + '•'.repeat(Math.min(val.length - 8, 24));
@@ -2002,6 +2212,7 @@ router.put('/admin/gateways/:id', writeLimiter, requireAdminAuth, ah(async (req,
   };
   await store.settings.set('gateways', gs);
   if (id === 'nalopay') nalopay.configureKeys(nalopayKeysFrom(gs.gateways.nalopay));
+  if (id === 'mcash') mcash.configureKeys(mcashKeysFrom(gs.gateways.mcash));
   res.json({ ok: true });
 }));
 
@@ -2015,6 +2226,8 @@ router.put('/admin/gateways/:id/toggle', writeLimiter, requireAdminAuth, ah(asyn
   await store.settings.set('gateways', gs);
   if (gs.activeGateway === 'nalopay') nalopay.configureKeys(nalopayKeysFrom((gs.gateways || {}).nalopay));
   else if (id === 'nalopay') nalopay.configureKeys(null);
+  if (gs.activeGateway === 'mcash') mcash.configureKeys(mcashKeysFrom((gs.gateways || {}).mcash));
+  else if (id === 'mcash') mcash.configureKeys(null);
   res.json({ ok: true, activeGateway: gs.activeGateway });
 }));
 
@@ -2026,6 +2239,7 @@ router.delete('/admin/gateways/:id', writeLimiter, requireAdminAuth, ah(async (r
   if (gs.gateways) delete gs.gateways[id];
   await store.settings.set('gateways', gs);
   if (id === 'nalopay') nalopay.configureKeys(null);
+  if (id === 'mcash') mcash.configureKeys(null);
   res.json({ ok: true });
 }));
 
