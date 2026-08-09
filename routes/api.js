@@ -1945,36 +1945,85 @@ router.post('/webhooks/nalopay', webhookLimiter, ah(async (req, res) => {
    uppercase hex, which a forger cannot produce without the secret. The amount
    is additionally checked against our own record so even a validly-signed IPN
    can never settle a charge for less than the payer owed. */
+/* Every notification is kept (newest first, capped) so money arriving at
+   MCASH is visible in the admin console — before this, a payment's only
+   trace was a line in the Render logs. */
+async function recordMcashIpn(record) {
+  try {
+    const list = (await store.settings.get('mcash_ipns')) || [];
+    list.unshift(record);
+    await store.settings.set('mcash_ipns', list.slice(0, 200));
+  } catch (e) { console.warn('[MCASH IPN] could not record:', e.message); }
+}
+
 router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
   const body = req.body || {};
   /* PHP-style form arrays: data[amount]=… parses to body.data.amount under
      extended urlencoded parsing; fall back to the flat key just in case. */
   const d = (body.data && typeof body.data === 'object') ? body.data : {};
   const amountRaw = d.amount != null ? String(d.amount) : String(body['data[amount]'] ?? '');
-  const identifier = body.identifier;
+  const identifier = body.identifier != null ? String(body.identifier) : null;
   console.log('[MCASH IPN]', JSON.stringify({ identifier, claimed: body.status }));
 
-  if (!identifier || !body.signature) return res.json({ received: true });
+  const record = {
+    at: Date.now(),
+    identifier,
+    status: body.status != null ? String(body.status) : null,
+    amount: amountRaw || null,
+    currency: d.currency ? String(d.currency) : null,
+    transactionId: d.payment_trx_id || d.transaction_id || null,
+    verified: false,          // HMAC checked out against our secret key
+    matchedReference: null,   // the KassifyPay charge this was tied to
+    autoSettled: false,       // true when this notification marked it paid
+  };
 
-  const charge = await store.charges.byMcashRef(String(identifier));
-  if (!charge) return res.json({ received: true });
-  if (charge.status === 'success' || charge.status === 'failed') return res.json({ received: true });
+  /* API-mode charges carry the identifier we minted; pay-link payments carry
+     MCASH's own, so `charge` stays null for those. */
+  let charge = identifier ? await store.charges.byMcashRef(identifier) : null;
+  const mode = charge && charge.mcashMode === 'test' ? 'test' : 'live';
+  record.verified = Boolean(identifier && body.signature &&
+    mcash.verifySignature({ amountRaw, identifier, signature: body.signature, mode }));
 
-  const mode = charge.mcashMode === 'test' ? 'test' : 'live';
-  if (!mcash.verifySignature({ amountRaw, identifier, signature: body.signature, mode })) {
-    console.warn('[MCASH IPN] rejected: bad signature', JSON.stringify({ identifier }));
-    const e = new Error('Invalid signature.'); e.status = 400; throw e;
+  if (charge) {
+    record.matchedReference = charge.reference;
+    const settled = charge.status === 'success' || charge.status === 'failed';
+    if (!record.verified) {
+      console.warn('[MCASH IPN] rejected: bad signature', JSON.stringify({ identifier }));
+    } else if (!settled && mcash.toMinor(amountRaw) !== fees.payableAmount(charge)) {
+      /* The signed amount must be what this charge's payer owed. */
+      console.warn('[MCASH IPN] rejected: amount mismatch', JSON.stringify({ identifier, reported: amountRaw, expected: fees.payableAmount(charge) }));
+    } else if (!settled) {
+      await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
+      await emitWebhookIfTerminal(charge);
+      record.autoSettled = charge.status === 'success';
+    }
+  } else if (record.verified && mcash.mapStatus(body.status) === 'success') {
+    /* Pay-link payment. Settle automatically ONLY when the signed amount
+       matches exactly one recent open pay-link charge — ambiguity (two payers
+       owing the same amount) always falls through to manual confirmation.
+       Unverified notifications never settle anything: the endpoint is public,
+       and an amount is trivial to guess. */
+    const cutoff = Date.now() - 48 * 3600_000;
+    const candidates = (await store.charges.pendingPaylink())
+      .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
+      .filter((c) => fees.payableAmount(c) === mcash.toMinor(amountRaw));
+    if (candidates.length === 1) {
+      charge = candidates[0];
+      await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
+      await emitWebhookIfTerminal(charge);
+      record.matchedReference = charge.reference;
+      record.autoSettled = charge.status === 'success';
+    } else if (candidates.length > 1) {
+      console.log('[MCASH IPN] ambiguous amount — left for manual confirmation', JSON.stringify({ amount: amountRaw, candidates: candidates.length }));
+    }
   }
 
-  /* The signed amount must be what this charge's payer owed. */
-  if (mcash.toMinor(amountRaw) !== fees.payableAmount(charge)) {
-    console.warn('[MCASH IPN] rejected: amount mismatch', JSON.stringify({ identifier, reported: amountRaw, expected: fees.payableAmount(charge) }));
-    return res.json({ received: true });
-  }
-
-  await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
-  await emitWebhookIfTerminal(charge);
+  await recordMcashIpn(record);
   res.json({ received: true });
+}));
+
+router.get('/admin/mcash-payments', requireAdminAuth, ah(async (req, res) => {
+  res.json({ payments: (await store.settings.get('mcash_ipns')) || [] });
 }));
 
 /* ========================= KYC ========================= */

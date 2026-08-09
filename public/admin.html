@@ -1312,12 +1312,18 @@ function txTable(rows, viewable=false){
 
 /* ========================= Confirmations ========================= */
 async function renderConfirmations(el){
-  const {transactions} = await API.get('/api/admin/transactions');
+  const [{transactions}, mcashRes] = await Promise.all([
+    API.get('/api/admin/transactions'),
+    API.get('/api/admin/mcash-payments').catch(()=>({payments:[]})),
+  ]);
   txCache = transactions;
+  const mcashPayments = (mcashRes.payments||[]).slice(0, 20);
 
-  /* Only show transfers where the customer confirmed they sent the money */
+  /* Bank transfers the customer confirmed sending, plus every open MCASH
+     pay-link charge — a pay-link payer who closes the tab without tapping
+     "I've paid" would otherwise be invisible here. */
   let pending = transactions.filter(t =>
-    !['success','failed'].includes(t.status) && t.transferNotified
+    !['success','failed'].includes(t.status) && (t.transferNotified || t.mcashPaylink)
   );
 
   function timeAgo(ts){
@@ -1339,6 +1345,7 @@ async function renderConfirmations(el){
         <span class="badge" style="background:rgba(224,161,46,.18);color:#E0A12E;border-color:rgba(224,161,46,.3);white-space:nowrap;flex-shrink:0">Awaiting confirmation</span>
       </div>
       <div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        ${t.mcashPaylink ? `<span class="badge" style="background:rgba(115,103,240,.14);color:#7367f0;border-color:rgba(115,103,240,.3)">MCASH pay-link</span>` : ''}
         ${t.customerEmail ? `<span style="font-size:13px;color:var(--ink-soft)">${esc(t.customerEmail)}</span><span style="color:var(--line);font-size:12px">·</span>` : ''}
         <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">${timeAgo(t.createdAt)}</span>
         <div style="margin-left:auto;display:flex;gap:8px;flex-shrink:0">
@@ -1349,21 +1356,42 @@ async function renderConfirmations(el){
     </div>`;
   }
 
+  /* Payments MCASH told us about, newest first. Verified = the notification's
+     signature checked out against our secret key. Matched = it was tied to a
+     charge (and possibly settled it automatically). */
+  function mcashPanel(){
+    if(!mcashPayments.length) return '';
+    const rows = mcashPayments.map(p=>`<tr>
+      <td data-label="Amount" style="font-family:var(--mono);font-weight:800">${esc(p.currency||'GHS')} ${esc(p.amount||'—')}</td>
+      <td data-label="Status">${statusTag(p.status==='success'?'success':(p.status||'pending'))}</td>
+      <td data-label="Signature">${p.verified?`<span class="badge" style="background:rgba(26,155,110,.14);color:#1A9B6E;border-color:rgba(26,155,110,.3)">Signed ✓</span>`:`<span class="badge" style="background:rgba(224,161,46,.14);color:#E0A12E;border-color:rgba(224,161,46,.3)">Unverified</span>`}</td>
+      <td data-label="Charge" style="font-family:var(--mono);font-size:11px">${p.matchedReference?esc(p.matchedReference)+(p.autoSettled?' <span style="color:#1A9B6E">auto-confirmed</span>':''):'<span style="color:var(--muted)">unmatched</span>'}</td>
+      <td data-label="When" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(p.at)}</td>
+    </tr>`).join('');
+    return `<div style="background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:18px">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:8px">
+        <strong style="font-size:14px">MCASH payments received</strong>
+        <span style="font-size:12px;color:var(--muted)">— match these against the charges below before marking paid</span>
+      </div>
+      <table class="table"><thead><tr><th>Amount</th><th>Status</th><th>Signature</th><th>Charge</th><th>When</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+  }
+
   function draw(){
     document.getElementById('statusBadge').textContent = pending.length ? pending.length+' pending' : 'All clear';
     if(!pending.length){
-      el.innerHTML = `<div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:64px 24px;text-align:center">
+      el.innerHTML = mcashPanel()+`<div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:64px 24px;text-align:center">
         <div style="width:56px;height:56px;border-radius:50%;background:rgba(26,155,110,.12);border:1.5px solid rgba(26,155,110,.25);display:flex;align-items:center;justify-content:center;margin:0 auto 18px">
           <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#1A9B6E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
         <h3 style="font-size:17px;margin-bottom:8px">All caught up</h3>
-        <p style="color:var(--muted);font-size:14px">No bank transfers waiting for confirmation right now.</p>
+        <p style="color:var(--muted);font-size:14px">No payments waiting for confirmation right now.</p>
       </div>`;
       return;
     }
-    el.innerHTML = `
+    el.innerHTML = mcashPanel()+`
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-        <span style="font-size:13px;color:var(--muted);font-weight:600">${pending.length} transfer${pending.length!==1?'s':''} waiting — check your bank account, then mark each one as paid.</span>
+        <span style="font-size:13px;color:var(--muted);font-weight:600">${pending.length} payment${pending.length!==1?'s':''} waiting — check your MCASH account or bank, then mark each one as paid.</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px">
         ${pending.map((t,i)=>confCard(t,i)).join('')}
