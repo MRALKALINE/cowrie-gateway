@@ -1366,7 +1366,7 @@ async function renderConfirmations(el){
     if(p.matchedReference) return esc(p.matchedReference)+(p.autoSettled?' <span style="color:#1A9B6E">auto-confirmed</span>':' <span style="color:#1A9B6E">confirmed</span>');
     if(p.verified && p.status==='success'){
       const minor = Math.round(parseFloat(p.amount||'0')*100);
-      const cands = pending.filter(t => (t.mcashPayAmount!=null?t.mcashPayAmount:(t.totalAmount!=null?t.totalAmount:(t.amount||0))) === minor);
+      const cands = pending.filter(t => t.mcashPayAmount===minor || (t.totalAmount!=null?t.totalAmount:(t.amount||0))===minor);
       if(!cands.length) return '<span style="color:var(--muted)">no matching charge</span>';
       const picker = cands.length===1
         ? `<span style="font-family:var(--mono);font-size:11px">${esc(cands[0].reference)}</span>`

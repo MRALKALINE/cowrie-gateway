@@ -1929,16 +1929,22 @@ async function confirmWithNalopay(charge, orderId) {
    webhook's uniqueness rules, in both directions: one unclaimed payment for
    the amount, and one open charge expecting it. */
 async function settleFromRecordedIpns(charge) {
-  const expect = charge.mcashPayAmount || fees.payableAmount(charge);
+  /* Either figure identifies this charge: the fingerprint it displayed or the
+     base payable amount — payers sometimes pay the round figure regardless,
+     and records can predate a fingerprint assigned on a later attempt. */
+  const figures = new Set([fees.payableAmount(charge)]);
+  if (charge.mcashPayAmount) figures.add(charge.mcashPayAmount);
   const list = (await store.settings.get('mcash_ipns')) || [];
   const matches = list.filter((p) => p.verified && !p.matchedReference &&
-    mcash.mapStatus(p.status) === 'success' && mcash.toMinor(p.amount) === expect);
+    mcash.mapStatus(p.status) === 'success' && figures.has(mcash.toMinor(p.amount)));
+  if (!matches.length) return;
   /* A payment whose payload names this very charge needs no uniqueness — the
      reference plus the amount already identify it. */
   let rec = matches.find((p) => p.chargeRefHint === charge.reference) || null;
   if (!rec) {
     const contenders = (await store.charges.pendingPaylink())
-      .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === expect);
+      .filter((c) => c.reference === charge.reference ||
+        figures.has(c.mcashPayAmount || 0) || figures.has(fees.payableAmount(c)));
     /* Same recency tie-break as the webhook: this charge wins if it is the
        only contender, or the only one with a fresh attempt. */
     let mine = contenders.length === 1 && contenders[0].reference === charge.reference;
@@ -1952,6 +1958,7 @@ async function settleFromRecordedIpns(charge) {
        newest. */
     rec = matches.slice().sort((a, b) => b.at - a.at)[0];
   }
+  if (!rec) return;
   await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, rec.status, {
     raw: { amount: rec.amount, currency: rec.currency, payment_trx_id: rec.transactionId },
   }));
@@ -2086,7 +2093,7 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
        settles with no guessing. */
     const hinted = record.chargeRefHint ? await store.charges.byReference(record.chargeRefHint) : null;
     if (hinted && hinted.status !== 'success' && hinted.status !== 'failed' &&
-        (hinted.mcashPayAmount || fees.payableAmount(hinted)) === mcash.toMinor(amountRaw)) {
+        (hinted.mcashPayAmount === mcash.toMinor(amountRaw) || fees.payableAmount(hinted) === mcash.toMinor(amountRaw))) {
       charge = hinted;
       await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
       await emitWebhookIfTerminal(charge);
@@ -2103,7 +2110,7 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
     const cutoff = Date.now() - 48 * 3600_000;
     const candidates = (await store.charges.pendingPaylink())
       .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
-      .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === mcash.toMinor(amountRaw));
+      .filter((c) => c.mcashPayAmount === mcash.toMinor(amountRaw) || fees.payableAmount(c) === mcash.toMinor(amountRaw));
     record.candidates = candidates.length;
     /* Recency tie-break: a notification lands moments after its payer's
        attempt, so when several charges share the amount but only ONE has a
@@ -2158,7 +2165,8 @@ router.post('/admin/mcash-payments/:id/apply', writeLimiter, requireAdminAuth, a
   if (charge.status === 'success' || charge.status === 'failed') {
     const e = new Error('That charge is already settled.'); e.status = 409; throw e;
   }
-  if (mcash.toMinor(rec.amount) !== (charge.mcashPayAmount || fees.payableAmount(charge))) {
+  const paidMinor = mcash.toMinor(rec.amount);
+  if (paidMinor !== charge.mcashPayAmount && paidMinor !== fees.payableAmount(charge)) {
     const e = new Error('The payment amount does not match this charge.'); e.status = 400; throw e;
   }
 
