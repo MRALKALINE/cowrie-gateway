@@ -783,7 +783,7 @@ async function boot(){
            puts a status in the query, so always re-verify when a session was
            started and the charge is still open. For MCASH the poll simply
            picks up whatever the signed IPN has already settled. */
-        if((charge.nalopayRef||charge.mcashRef)&&charge.status!=='success'&&charge.status!=='failed'){
+        if((charge.nalopayRef||charge.mcashRef||charge.mcashPaylink)&&charge.status!=='success'&&charge.status!=='failed'){
           try{const {charge:v}=await API.get('/api/charges/'+encodeURIComponent(ref)+'/verify');S.charge=v;}catch(e){}
           if(S.charge.status!=='success'&&S.charge.status!=='failed'){startPolling();}
         }

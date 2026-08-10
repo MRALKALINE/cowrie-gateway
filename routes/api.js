@@ -545,6 +545,7 @@ router.get('/charges/:reference', loadCharge, ah(async (req, res) => {
     callbackUrl: c.callbackUrl || null,
     nalopayRef: c.nalopayRef || null,   // the checkout uses this to re-verify on return
     mcashRef: c.mcashRef || null,       // same job for the MCASH hosted flow
+    mcashPaylink: !!c.mcashPaylink,     // reopening the link resumes polling, which retries the match
     ussdCode: c.ussdCode || null,       // dial-to-approve string, when the network gives one
     failure: c.failure ? { message: c.failure.message } : null,
     auth: c.auth ? { channel: c.auth.channel, network: c.auth.network, brand: c.auth.brand, last4: c.auth.last4 } : null,
