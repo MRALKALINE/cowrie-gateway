@@ -596,6 +596,9 @@ function renderPaylink(b){
      show "we'll confirm shortly". Polling keeps running so an admin mark-paid
      flips this page to success while it is still open. */
   $('#paidBtn').addEventListener('click',()=>go('transfer_sent'));
+  /* Open MCASH straight away so the payer doesn't need a second tap; the
+     button stays as the fallback when a popup blocker eats this. */
+  if(d.url){try{window.open(d.url,'_blank','noopener');}catch(e){}}
   startPolling();
 }
 

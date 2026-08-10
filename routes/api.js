@@ -1718,11 +1718,14 @@ async function payWithMcash(req, res) {
       c.updatedAt = Date.now();
       c.auth = { provider: 'mcash', channel: 'paylink' };
     });
+    /* Amount rides along as a query parameter — if MCASH's page reads it the
+       field arrives pre-filled; if not it is harmlessly ignored. */
+    const plUrl = mcash.paylinkUrl();
     return res.json({
       charge,
       next: 'paylink',
       detail: {
-        url: mcash.paylinkUrl(),
+        url: `${plUrl}${plUrl.includes('?') ? '&' : '?'}amount=${mcash.toMajor(payAmount)}`,
         amountMajor: mcash.toMajor(payAmount),
         currency: charge.currency || 'GHS',
         reference: charge.reference,
