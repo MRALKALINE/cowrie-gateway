@@ -1949,10 +1949,8 @@ async function settleFromRecordedIpns(charge) {
     if (!mine) return;
     /* Any of the unclaimed same-amount payments is a genuine payment of the
        right figure, so which record gets consumed doesn't matter — take the
-       newest fresh one. */
-    rec = matches.length === 1 ? matches[0]
-      : matches.filter((p) => Date.now() - p.at <= 30 * 60_000).sort((a, b) => b.at - a.at)[0];
-    if (!rec) return;
+       newest. */
+    rec = matches.slice().sort((a, b) => b.at - a.at)[0];
   }
   await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, rec.status, {
     raw: { amount: rec.amount, currency: rec.currency, payment_trx_id: rec.transactionId },
