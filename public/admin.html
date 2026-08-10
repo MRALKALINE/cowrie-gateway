@@ -1383,7 +1383,7 @@ async function renderConfirmations(el){
       <td data-label="Status">${statusTag(p.status==='success'?'success':(p.status||'pending'))}</td>
       <td data-label="Signature">${p.verified?`<span class="badge" style="background:rgba(26,155,110,.14);color:#1A9B6E;border-color:rgba(26,155,110,.3)">Signed ✓</span>`:`<span class="badge" style="background:rgba(224,161,46,.14);color:#E0A12E;border-color:rgba(224,161,46,.3)">Unverified</span>`}</td>
       <td data-label="Charge" style="font-family:var(--mono);font-size:11px">${chargeCell(p,i)}</td>
-      <td data-label="When" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(p.at)}</td>
+      <td data-label="When" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(p.at)}${p.raw?`<details style="margin-top:4px"><summary style="cursor:pointer;font-size:10px">payload</summary><pre style="white-space:pre-wrap;word-break:break-all;font-size:10px;max-width:260px;max-height:160px;overflow:auto;background:var(--line-2);padding:6px;border-radius:6px">${esc(p.raw)}</pre></details>`:''}</td>
     </tr>`).join('');
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:18px">
       <div style="padding:16px 20px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:8px">

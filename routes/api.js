@@ -1932,12 +1932,16 @@ async function settleFromRecordedIpns(charge) {
   const list = (await store.settings.get('mcash_ipns')) || [];
   const matches = list.filter((p) => p.verified && !p.matchedReference &&
     mcash.mapStatus(p.status) === 'success' && mcash.toMinor(p.amount) === expect);
-  if (matches.length !== 1) return;
-  const contenders = (await store.charges.pendingPaylink())
-    .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === expect);
-  if (contenders.length !== 1 || contenders[0].reference !== charge.reference) return;
-
-  const rec = matches[0];
+  /* A payment whose payload names this very charge needs no uniqueness — the
+     reference plus the amount already identify it. */
+  let rec = matches.find((p) => p.chargeRefHint === charge.reference) || null;
+  if (!rec) {
+    if (matches.length !== 1) return;
+    const contenders = (await store.charges.pendingPaylink())
+      .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === expect);
+    if (contenders.length !== 1 || contenders[0].reference !== charge.reference) return;
+    rec = matches[0];
+  }
   await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, rec.status, {
     raw: { amount: rec.amount, currency: rec.currency, payment_trx_id: rec.transactionId },
   }));
@@ -2005,6 +2009,16 @@ async function recordMcashIpn(record) {
   } catch (e) { console.warn('[MCASH IPN] could not record:', e.message); }
 }
 
+/* A cwr_ reference the payer carried through a note/description field —
+   scanned across the whole payload, since MCASH does not document what its
+   pay-link IPN contains. When present it beats amount matching. */
+function chargeRefHintFrom(body) {
+  try {
+    const m = JSON.stringify(body).match(/cwr_[a-z0-9]{6,}/i);
+    return m ? m[0] : null;
+  } catch { return null; }
+}
+
 router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
   const body = req.body || {};
   /* PHP-style form arrays: data[amount]=… parses to body.data.amount under
@@ -2014,6 +2028,12 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
   const identifier = body.identifier != null ? String(body.identifier) : null;
   console.log('[MCASH IPN]', JSON.stringify({ identifier, claimed: body.status }));
 
+  /* The full payload is kept (capped) because MCASH's pay-link IPN format is
+     undocumented — the admin console shows it, which is how any field usable
+     for matching gets discovered. */
+  let raw = null;
+  try { raw = JSON.stringify(body).slice(0, 4000); } catch { /* unserialisable */ }
+
   const record = {
     id: genId('ipn_'),
     at: Date.now(),
@@ -2022,6 +2042,8 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
     amount: amountRaw || null,
     currency: d.currency ? String(d.currency) : null,
     transactionId: d.payment_trx_id || d.transaction_id || null,
+    chargeRefHint: chargeRefHintFrom(body),
+    raw,
     verified: false,          // HMAC checked out against our secret key
     matchedReference: null,   // the KassifyPay charge this was tied to
     autoSettled: false,       // true when this notification marked it paid
@@ -2048,11 +2070,26 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
       record.autoSettled = charge.status === 'success';
     }
   } else if (record.verified && mcash.mapStatus(body.status) === 'success') {
-    /* Pay-link payment. Settle automatically ONLY when the signed amount
-       matches exactly one recent open pay-link charge — ambiguity (two payers
-       owing the same amount) always falls through to manual confirmation.
-       Unverified notifications never settle anything: the endpoint is public,
-       and an amount is trivial to guess. */
+    /* Pay-link payment. Exact reference beats everything: when the payload
+       carries a cwr_ reference (the payer pasted it into the note, as the
+       checkout asks) naming an open charge whose amount matches, that charge
+       settles with no guessing. */
+    const hinted = record.chargeRefHint ? await store.charges.byReference(record.chargeRefHint) : null;
+    if (hinted && hinted.status !== 'success' && hinted.status !== 'failed' &&
+        (hinted.mcashPayAmount || fees.payableAmount(hinted)) === mcash.toMinor(amountRaw)) {
+      charge = hinted;
+      await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
+      await emitWebhookIfTerminal(charge);
+      record.matchedReference = charge.reference;
+      record.autoSettled = charge.status === 'success';
+      await recordMcashIpn(record);
+      return res.json({ received: true });
+    }
+    /* Otherwise settle ONLY when the signed amount matches exactly one recent
+       open pay-link charge — ambiguity (two payers owing the same amount)
+       always falls through to manual confirmation. Unverified notifications
+       never settle anything: the endpoint is public, and an amount is
+       trivial to guess. */
     const cutoff = Date.now() - 48 * 3600_000;
     const candidates = (await store.charges.pendingPaylink())
       .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
