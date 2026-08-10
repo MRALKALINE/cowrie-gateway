@@ -1934,8 +1934,7 @@ async function settleFromRecordedIpns(charge) {
      and records can predate a fingerprint assigned on a later attempt. */
   const figures = new Set([fees.payableAmount(charge)]);
   if (charge.mcashPayAmount) figures.add(charge.mcashPayAmount);
-  const list = (await store.settings.get('mcash_ipns')) || [];
-  const matches = list.filter((p) => p.verified && !p.matchedReference &&
+  const matches = (await store.mcashIpns.unclaimed()).filter((p) =>
     mcash.mapStatus(p.status) === 'success' && figures.has(mcash.toMinor(p.amount)));
   if (!matches.length) return;
   /* A payment whose payload names this very charge needs no uniqueness — the
@@ -1966,7 +1965,7 @@ async function settleFromRecordedIpns(charge) {
   if (charge.status === 'success') {
     rec.matchedReference = charge.reference;
     rec.autoSettled = true;
-    await store.settings.set('mcash_ipns', list);
+    await store.mcashIpns.update(rec);
   }
 }
 
@@ -1978,12 +1977,10 @@ async function settleFromRecordedIpns(charge) {
    fresh-attempt tie-break, then a unique fingerprint. Ambiguity keeps a
    payment unclaimed for the admin — it is never guessed away. */
 async function reconcileMcashPayments() {
-  const list = (await store.settings.get('mcash_ipns')) || [];
-  const unclaimed = list.filter((p) => p.verified && !p.matchedReference && mcash.mapStatus(p.status) === 'success');
+  const unclaimed = (await store.mcashIpns.unclaimed()).filter((p) => mcash.mapStatus(p.status) === 'success');
   if (!unclaimed.length) return;
   const open = await store.charges.pendingPaylink();
   if (!open.length) return;
-  let dirty = false;
 
   for (const rec of unclaimed) {
     const minor = mcash.toMinor(rec.amount);
@@ -2013,11 +2010,10 @@ async function reconcileMcashPayments() {
     if (target.status === 'success') {
       rec.matchedReference = target.reference;
       rec.autoSettled = true;
-      dirty = true;
+      await store.mcashIpns.update(rec);
       console.log('[MCASH reconcile] settled', JSON.stringify({ reference: target.reference, amount: rec.amount }));
     }
   }
-  if (dirty) await store.settings.set('mcash_ipns', list);
 }
 router.reconcileMcashPayments = reconcileMcashPayments;
 
@@ -2069,14 +2065,6 @@ router.post('/webhooks/nalopay', webhookLimiter, ah(async (req, res) => {
 /* Every notification is kept (newest first, capped) so money arriving at
    MCASH is visible in the admin console — before this, a payment's only
    trace was a line in the Render logs. */
-async function recordMcashIpn(record) {
-  try {
-    const list = (await store.settings.get('mcash_ipns')) || [];
-    list.unshift(record);
-    await store.settings.set('mcash_ipns', list.slice(0, 200));
-  } catch (e) { console.warn('[MCASH IPN] could not record:', e.message); }
-}
-
 /* A cwr_ reference the payer carried through a note/description field —
    scanned across the whole payload, since MCASH does not document what its
    pay-link IPN contains. When present it beats amount matching. */
@@ -2124,78 +2112,85 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
   record.verified = Boolean(identifier && body.signature &&
     mcash.verifySignature({ amountRaw, identifier, signature: body.signature, mode }));
 
-  if (charge) {
-    record.matchedReference = charge.reference;
-    const settled = charge.status === 'success' || charge.status === 'failed';
-    if (!record.verified) {
-      console.warn('[MCASH IPN] rejected: bad signature', JSON.stringify({ identifier }));
-    } else if (!settled && mcash.toMinor(amountRaw) !== fees.payableAmount(charge)) {
-      /* The signed amount must be what this charge's payer owed. */
-      console.warn('[MCASH IPN] rejected: amount mismatch', JSON.stringify({ identifier, reported: amountRaw, expected: fees.payableAmount(charge) }));
-    } else if (!settled) {
-      await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
-      await emitWebhookIfTerminal(charge);
-      record.autoSettled = charge.status === 'success';
-    }
-  } else if (record.verified && mcash.mapStatus(body.status) === 'success') {
-    /* Pay-link payment. Exact reference beats everything: when the payload
-       carries a cwr_ reference (the payer pasted it into the note, as the
-       checkout asks) naming an open charge whose amount matches, that charge
-       settles with no guessing. */
-    const hinted = record.chargeRefHint ? await store.charges.byReference(record.chargeRefHint) : null;
-    if (hinted && hinted.status !== 'success' && hinted.status !== 'failed' &&
-        (hinted.mcashPayAmount === mcash.toMinor(amountRaw) || fees.payableAmount(hinted) === mcash.toMinor(amountRaw))) {
-      charge = hinted;
-      await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
-      await emitWebhookIfTerminal(charge);
-      record.matchedReference = charge.reference;
-      record.autoSettled = charge.status === 'success';
-      await recordMcashIpn(record);
-      return res.json({ received: true });
-    }
-    /* Otherwise settle ONLY when the signed amount matches exactly one recent
-       open pay-link charge — ambiguity (two payers owing the same amount)
-       always falls through to manual confirmation. Unverified notifications
-       never settle anything: the endpoint is public, and an amount is
-       trivial to guess. */
-    const cutoff = Date.now() - 48 * 3600_000;
-    const candidates = (await store.charges.pendingPaylink())
-      .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
-      .filter((c) => c.mcashPayAmount === mcash.toMinor(amountRaw) || fees.payableAmount(c) === mcash.toMinor(amountRaw));
-    record.candidates = candidates.length;
-    /* Recency tie-break: a notification lands moments after its payer's
-       attempt, so when several charges share the amount but only ONE has a
-       fresh attempt, the fresh one is the payer — stale test charges must not
-       block real money. Two genuinely concurrent same-amount payers both
-       look fresh and still fall through to manual confirmation. */
-    let pick = candidates.length === 1 ? candidates[0] : null;
-    if (!pick && candidates.length > 1) {
-      const fresh = candidates.filter((c) => Date.now() - (c.lastAttemptAt || 0) <= 30 * 60_000);
-      if (fresh.length === 1) pick = fresh[0];
-    }
-    if (pick) {
-      charge = pick;
-      await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
-      await emitWebhookIfTerminal(charge);
-      record.matchedReference = charge.reference;
-      record.autoSettled = charge.status === 'success';
-    } else {
-      console.log('[MCASH IPN] not auto-confirmed — needs manual match', JSON.stringify({ amount: amountRaw, candidates: candidates.length }));
-    }
+  /* The record is written BEFORE any settlement is attempted, and a redelivery
+     of the same MCASH transaction reuses its existing row. Whatever happens
+     after this point — a version-conflict, a crash, a restart — the payment is
+     on file and the reconciler or the admin can still confirm it. Losing the
+     record was how a real payment became unconfirmable. */
+  let rec = record.transactionId ? await store.mcashIpns.byTransactionId(String(record.transactionId)) : null;
+  if (rec && rec.matchedReference) return res.json({ received: true });
+  if (rec) {
+    rec.verified = rec.verified || record.verified;
+    rec.chargeRefHint = rec.chargeRefHint || record.chargeRefHint;
+  } else {
+    rec = record;
+    await store.mcashIpns.insert(rec);
   }
 
-  await recordMcashIpn(record);
+  try {
+    if (charge) {
+      rec.matchedReference = charge.reference;
+      const settled = charge.status === 'success' || charge.status === 'failed';
+      if (!rec.verified) {
+        console.warn('[MCASH IPN] rejected: bad signature', JSON.stringify({ identifier }));
+        rec.matchedReference = null;
+      } else if (!settled && mcash.toMinor(amountRaw) !== fees.payableAmount(charge)) {
+        /* The signed amount must be what this charge's payer owed. */
+        console.warn('[MCASH IPN] rejected: amount mismatch', JSON.stringify({ identifier, reported: amountRaw, expected: fees.payableAmount(charge) }));
+        rec.matchedReference = null;
+      } else if (!settled) {
+        await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
+        await emitWebhookIfTerminal(charge);
+        rec.autoSettled = charge.status === 'success';
+      }
+    } else if (rec.verified && mcash.mapStatus(body.status) === 'success') {
+      /* Pay-link payment. Exact reference beats everything: when the payload
+         carries a cwr_ reference (the payer pasted it into the note, as the
+         checkout asks) naming an open charge whose amount matches, that
+         charge settles with no guessing. */
+      const hinted = rec.chargeRefHint ? await store.charges.byReference(rec.chargeRefHint) : null;
+      let pick = null;
+      if (hinted && hinted.status !== 'success' && hinted.status !== 'failed' &&
+          (hinted.mcashPayAmount === mcash.toMinor(amountRaw) || fees.payableAmount(hinted) === mcash.toMinor(amountRaw))) {
+        pick = hinted;
+      } else {
+        /* Otherwise settle ONLY when the signed amount identifies exactly one
+           recent open pay-link charge — with a recency tie-break so stale
+           test charges never block real money. Genuine ambiguity waits for
+           the reconciler or the admin. Unverified notifications never settle
+           anything: the endpoint is public, an amount trivial to guess. */
+        const cutoff = Date.now() - 48 * 3600_000;
+        const candidates = (await store.charges.pendingPaylink())
+          .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
+          .filter((c) => c.mcashPayAmount === mcash.toMinor(amountRaw) || fees.payableAmount(c) === mcash.toMinor(amountRaw));
+        rec.candidates = candidates.length;
+        pick = candidates.length === 1 ? candidates[0] : null;
+        if (!pick && candidates.length > 1) {
+          const fresh = candidates.filter((c) => Date.now() - (c.lastAttemptAt || 0) <= 30 * 60_000);
+          if (fresh.length === 1) pick = fresh[0];
+        }
+      }
+      if (pick) {
+        charge = pick;
+        await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
+        await emitWebhookIfTerminal(charge);
+        rec.matchedReference = charge.reference;
+        rec.autoSettled = charge.status === 'success';
+      } else {
+        console.log('[MCASH IPN] not auto-confirmed — reconciler will retry', JSON.stringify({ amount: amountRaw, candidates: rec.candidates }));
+      }
+    }
+  } catch (e) {
+    /* The record survives; the reconciler retries the match. */
+    console.warn('[MCASH IPN] settle failed, record kept:', e.message);
+  }
+
+  await store.mcashIpns.update(rec);
   res.json({ received: true });
 }));
 
 router.get('/admin/mcash-payments', requireAdminAuth, ah(async (req, res) => {
-  const list = (await store.settings.get('mcash_ipns')) || [];
-  /* Records written before ids existed get one on first read, so the apply
-     route below can always address them. */
-  let changed = false;
-  for (const p of list) { if (!p.id) { p.id = genId('ipn_'); changed = true; } }
-  if (changed) await store.settings.set('mcash_ipns', list);
-  res.json({ payments: list });
+  res.json({ payments: await store.mcashIpns.recent() });
 }));
 
 /* One-click confirmation from the admin console: applies a recorded MCASH
@@ -2203,8 +2198,7 @@ router.get('/admin/mcash-payments', requireAdminAuth, ah(async (req, res) => {
    payments whose amount matches the charge exactly — an admin who wants to
    override those guards can still use the plain mark-paid route. */
 router.post('/admin/mcash-payments/:id/apply', writeLimiter, requireAdminAuth, ah(async (req, res) => {
-  const list = (await store.settings.get('mcash_ipns')) || [];
-  const rec = list.find((p) => p.id === req.params.id);
+  const rec = await store.mcashIpns.byId(req.params.id);
   if (!rec) { const e = new Error('Payment record not found.'); e.status = 404; throw e; }
   if (!rec.verified || mcash.mapStatus(rec.status) !== 'success') {
     const e = new Error('Only signature-verified successful payments can be applied.'); e.status = 400; throw e;
@@ -2227,7 +2221,7 @@ router.post('/admin/mcash-payments/:id/apply', writeLimiter, requireAdminAuth, a
   await emitWebhookIfTerminal(charge);
   rec.matchedReference = charge.reference;
   rec.appliedAt = Date.now();
-  await store.settings.set('mcash_ipns', list);
+  await store.mcashIpns.update(rec);
   res.json({ ok: true, charge: { reference: charge.reference, status: charge.status } });
 }));
 

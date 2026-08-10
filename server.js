@@ -8,7 +8,7 @@ const cfg = require('./lib/config');
 const api = require('./routes/api');
 const partnerLink = require('./routes/partner-link');
 const { migrate } = require('./lib/migrate');
-const { apiKey } = require('./lib/util');
+const { apiKey, genId } = require('./lib/util');
 const { seedAdmins } = require('./lib/admins');
 const nalopay = require('./lib/nalopay');
 const mcash = require('./lib/mcash');
@@ -284,6 +284,21 @@ async function start() {
   await migrateMerchantKeys();
   await seedAdmins();
   await loadGatewaySettings();
+
+  /* One-time move of MCASH payment records out of the settings blob into
+     their own table — the blob's read-modify-write could lose records to
+     concurrent writers, which is fatal to auto-confirmation. */
+  try {
+    const legacy = await store.settings.get('mcash_ipns');
+    if (Array.isArray(legacy) && legacy.length) {
+      for (const p of legacy) {
+        if (!p.id) p.id = genId('ipn_');
+        await store.mcashIpns.insert(p);   // ON CONFLICT DO NOTHING — rerun-safe
+      }
+      await store.settings.set('mcash_ipns', []);
+      console.log(`  ✓ Migrated ${legacy.length} MCASH payment record(s) to their own table`);
+    }
+  } catch (e) { console.warn('[mcash migrate]', e.message); }
 
   /* Re-match unclaimed MCASH payments to open charges continuously, so a
      verified payment confirms automatically even when the payer's tab is
