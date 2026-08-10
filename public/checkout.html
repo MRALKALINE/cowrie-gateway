@@ -349,8 +349,10 @@ function formFor(m){
 function bindForm(){
   const m=S.method;
   function validateName(){
-    const n=(($('#payerName')||{}).value||'').trim();
-    if(!n){const e=$('#payerNameErr');if(e)e.classList.add('show');const i=$('#payerName');if(i)i.focus();return false;}
+    const input=$('#payerName');
+    if(!input) return true;             // field not rendered (MCASH flow)
+    const n=(input.value||'').trim();
+    if(!n){const e=$('#payerNameErr');if(e)e.classList.add('show');input.focus();return false;}
     const e=$('#payerNameErr');if(e)e.classList.remove('show');
     S.payerName=n;return true;
   }
@@ -505,7 +507,10 @@ function render(){
     $('#amtV').textContent=fmt(amount(),ccy());
     renderAmountBreakdown();
     const _nv=S.payerName?String(S.payerName).replace(/"/g,'&quot;'):'';
-    b.innerHTML=tabs()+`<div class="field" style="margin-top:14px"><label>Full name</label><input id="payerName" type="text" placeholder="Name on your bank account or SIM" autocomplete="name" value="${_nv}"><div class="err" id="payerNameErr">Please enter your full name</div></div>`+formFor(S.method);
+    /* MCASH collects the payer's name on its own page, so asking here too was
+       pure friction — the field only renders for the other flows. */
+    const nameField=PROVIDER==='mcash'?'':`<div class="field" style="margin-top:14px"><label>Full name</label><input id="payerName" type="text" placeholder="Name on your bank account or SIM" autocomplete="name" value="${_nv}"><div class="err" id="payerNameErr">Please enter your full name</div></div>`;
+    b.innerHTML=tabs()+nameField+formFor(S.method);
     b.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
       S.payerName=($('#payerName')||{}).value||S.payerName;
       S.method=t.dataset.m;
