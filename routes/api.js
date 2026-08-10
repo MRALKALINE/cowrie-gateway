@@ -2065,6 +2065,61 @@ router.post('/webhooks/nalopay', webhookLimiter, ah(async (req, res) => {
 /* Every notification is kept (newest first, capped) so money arriving at
    MCASH is visible in the admin console — before this, a payment's only
    trace was a line in the Render logs. */
+/* MCASH's real IPNs arrived with EMPTY bodies for hours: they are not sent as
+   JSON or urlencoded, so the global parsers skipped them and req.body stayed
+   {} — every notification recorded as nulls, nothing ever matched. The
+   webhook therefore accepts any content type: multipart/form-data (classic
+   PHP curl), raw JSON, urlencoded text, whatever — parsed here by hand. */
+function parseMultipart(buf, contentType) {
+  const m = /boundary="?([^";]+)"?/i.exec(contentType || '');
+  if (!m) return {};
+  const out = {};
+  for (const part of buf.toString('utf8').split('--' + m[1])) {
+    const nm = /name="([^"]+)"/i.exec(part);
+    if (!nm) continue;
+    const idx = part.indexOf('\r\n\r\n');
+    if (idx === -1) continue;
+    out[nm[1]] = part.slice(idx + 4).replace(/\r\n$/, '');
+  }
+  return out;
+}
+
+/* PHP-style bracket keys (data[amount]=…) flattened by multipart or
+   querystring parsing get nested back into objects. */
+function normalizeBrackets(flat) {
+  const out = {};
+  for (const [k, v] of Object.entries(flat || {})) {
+    const m = /^([^\[]+)\[([^\]]+)\]$/.exec(k);
+    if (m) {
+      if (!out[m[1]] || typeof out[m[1]] !== 'object') out[m[1]] = {};
+      out[m[1]][m[2]] = v;
+    } else out[k] = v;
+  }
+  return out;
+}
+
+function coerceIpnBody(req) {
+  let b = req.body;
+  if (Buffer.isBuffer(b)) {
+    const ct = String(req.headers['content-type'] || '');
+    req._ipnRawText = b.toString('utf8').slice(0, 4000);
+    if (/multipart\/form-data/i.test(ct)) return parseMultipart(b, ct);
+    const text = b.toString('utf8').trim();
+    if (text) {
+      try { return JSON.parse(text); } catch { /* not JSON */ }
+      try { return Object.fromEntries(new URLSearchParams(text)); } catch { /* not a query string */ }
+    }
+    return {};
+  }
+  if (typeof b === 'string') {
+    req._ipnRawText = b.slice(0, 4000);
+    try { return JSON.parse(b); } catch { /* not JSON */ }
+    try { return Object.fromEntries(new URLSearchParams(b)); } catch { /* not a query string */ }
+    return {};
+  }
+  return b || {};
+}
+
 /* A cwr_ reference the payer carried through a note/description field —
    scanned across the whole payload, since MCASH does not document what its
    pay-link IPN contains. When present it beats amount matching. */
@@ -2075,24 +2130,33 @@ function chargeRefHintFrom(body) {
   } catch { return null; }
 }
 
-router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
-  const body = req.body || {};
-  /* PHP-style form arrays: data[amount]=… parses to body.data.amount under
-     extended urlencoded parsing; fall back to the flat key just in case. */
+router.post('/webhooks/mcash', webhookLimiter,
+  /* Capture everything the global parsers don't handle (multipart, text,
+     missing content-type) as a raw buffer for coerceIpnBody. */
+  express.raw({
+    type: (req) => {
+      const t = String(req.headers['content-type'] || '');
+      return !/json|urlencoded/i.test(t);
+    },
+    limit: '256kb',
+  }),
+  ah(async (req, res) => {
+  const body = normalizeBrackets(coerceIpnBody(req));
   const d = (body.data && typeof body.data === 'object') ? body.data : {};
   const amountRaw = d.amount != null ? String(d.amount) : String(body['data[amount]'] ?? '');
   const identifier = body.identifier != null ? String(body.identifier) : null;
-  console.log('[MCASH IPN]', JSON.stringify({ identifier, claimed: body.status }));
+  console.log('[MCASH IPN]', JSON.stringify({ identifier, claimed: body.status, contentType: req.headers['content-type'] }));
 
   /* The full payload is kept (capped) because MCASH's pay-link IPN format is
      undocumented — the admin console shows it, which is how any field usable
      for matching gets discovered. */
   let raw = null;
-  try { raw = JSON.stringify(body).slice(0, 4000); } catch { /* unserialisable */ }
+  try { raw = (req._ipnRawText || JSON.stringify(body)).slice(0, 4000); } catch { /* unserialisable */ }
 
   const record = {
     id: genId('ipn_'),
     at: Date.now(),
+    contentType: String(req.headers['content-type'] || '') || null,
     identifier,
     status: body.status != null ? String(body.status) : null,
     amount: amountRaw || null,
