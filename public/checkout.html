@@ -450,6 +450,15 @@ function clearPollTimers(){
   if(_pollStop){clearTimeout(_pollStop);_pollStop=null;}
 }
 
+/* Paying on the MCASH page takes longer than the 3-minute polling window, so
+   polling has usually stopped by the time the payer switches back to this
+   tab. Coming back restarts it — that moment is exactly when the payment's
+   notification is most likely to have arrived. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) return;
+  if((S.step==='paylink'||S.step==='transfer_sent'||S.step==='approve')&&S.charge&&S.charge.status!=='success'&&S.charge.status!=='failed') startPolling();
+});
+
 function startPolling(){
   clearPollTimers();
   _pollStarted=Date.now();

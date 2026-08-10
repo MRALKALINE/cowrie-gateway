@@ -1936,11 +1936,22 @@ async function settleFromRecordedIpns(charge) {
      reference plus the amount already identify it. */
   let rec = matches.find((p) => p.chargeRefHint === charge.reference) || null;
   if (!rec) {
-    if (matches.length !== 1) return;
     const contenders = (await store.charges.pendingPaylink())
       .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === expect);
-    if (contenders.length !== 1 || contenders[0].reference !== charge.reference) return;
-    rec = matches[0];
+    /* Same recency tie-break as the webhook: this charge wins if it is the
+       only contender, or the only one with a fresh attempt. */
+    let mine = contenders.length === 1 && contenders[0].reference === charge.reference;
+    if (!mine && contenders.length > 1) {
+      const fresh = contenders.filter((c) => Date.now() - (c.lastAttemptAt || 0) <= 30 * 60_000);
+      mine = fresh.length === 1 && fresh[0].reference === charge.reference;
+    }
+    if (!mine) return;
+    /* Any of the unclaimed same-amount payments is a genuine payment of the
+       right figure, so which record gets consumed doesn't matter — take the
+       newest fresh one. */
+    rec = matches.length === 1 ? matches[0]
+      : matches.filter((p) => Date.now() - p.at <= 30 * 60_000).sort((a, b) => b.at - a.at)[0];
+    if (!rec) return;
   }
   await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, rec.status, {
     raw: { amount: rec.amount, currency: rec.currency, payment_trx_id: rec.transactionId },
@@ -2095,8 +2106,18 @@ router.post('/webhooks/mcash', webhookLimiter, ah(async (req, res) => {
       .filter((c) => (c.lastAttemptAt || c.createdAt || 0) >= cutoff)
       .filter((c) => (c.mcashPayAmount || fees.payableAmount(c)) === mcash.toMinor(amountRaw));
     record.candidates = candidates.length;
-    if (candidates.length === 1) {
-      charge = candidates[0];
+    /* Recency tie-break: a notification lands moments after its payer's
+       attempt, so when several charges share the amount but only ONE has a
+       fresh attempt, the fresh one is the payer — stale test charges must not
+       block real money. Two genuinely concurrent same-amount payers both
+       look fresh and still fall through to manual confirmation. */
+    let pick = candidates.length === 1 ? candidates[0] : null;
+    if (!pick && candidates.length > 1) {
+      const fresh = candidates.filter((c) => Date.now() - (c.lastAttemptAt || 0) <= 30 * 60_000);
+      if (fresh.length === 1) pick = fresh[0];
+    }
+    if (pick) {
+      charge = pick;
       await saveChargeWithRetry(charge, (c) => applyMcashStatus(c, body.status, { raw: d }));
       await emitWebhookIfTerminal(charge);
       record.matchedReference = charge.reference;
