@@ -2458,14 +2458,15 @@ function nalopayKeysFrom(g) {
   return (keys.merchantId && keys.basicAuth && keys.secretKey) ? keys : null;
 }
 
-/* MCASH uses the four slots as-is; either complete pair is enough (sandbox-
-   only is a valid way to trial the integration). Null keeps env vars in
-   charge, as with Nalopay. */
+/* MCASH uses the four slots as-is. ANY saved value loads — a lone secret key
+   is exactly what pay-link mode needs (it verifies IPN signatures), and
+   requiring a full pair silently discarded it: the key sat in the DB while
+   verification ran with an empty secret and failed every notification.
+   Hosted checkout still needs the full pair via configured(). Null keeps env
+   vars in charge, as with Nalopay. */
 function mcashKeysFrom(g) {
   if (!g) return null;
-  const livePair = g.livePublicKey && g.liveSecretKey;
-  const testPair = g.testPublicKey && g.testSecretKey;
-  if (!livePair && !testPair) return null;
+  if (!g.livePublicKey && !g.liveSecretKey && !g.testPublicKey && !g.testSecretKey) return null;
   return {
     livePublicKey: g.livePublicKey || '',
     liveSecretKey: g.liveSecretKey || '',

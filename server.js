@@ -253,8 +253,10 @@ async function loadGatewaySettings() {
     console.log('  ✓ Active gateway switched to MCASH');
   }
 
+  /* Any saved value loads — a lone secret key is all pay-link signature
+     verification needs; see mcashKeysFrom in routes/api.js. */
   const savedM = gs.gateways && gs.gateways.mcash;
-  if (savedM && ((savedM.livePublicKey && savedM.liveSecretKey) || (savedM.testPublicKey && savedM.testSecretKey))) {
+  if (savedM && (savedM.livePublicKey || savedM.liveSecretKey || savedM.testPublicKey || savedM.testSecretKey)) {
     mcash.configureKeys({
       livePublicKey: savedM.livePublicKey || '',
       liveSecretKey: savedM.liveSecretKey || '',
