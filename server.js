@@ -284,6 +284,14 @@ async function start() {
   await migrateMerchantKeys();
   await seedAdmins();
   await loadGatewaySettings();
+
+  /* Re-match unclaimed MCASH payments to open charges continuously, so a
+     verified payment confirms automatically even when the payer's tab is
+     long closed. Failures are logged and never fatal. */
+  const reconcile = () => api.reconcileMcashPayments().catch((e) => console.warn('[mcash reconcile]', e.message));
+  reconcile();
+  setInterval(reconcile, 2 * 60_000);
+
   app.listen(cfg.PORT, async () => {
     const all = await store.merchants.all();
     const demo = all.filter((m) => m.demo);

@@ -1970,6 +1970,57 @@ async function settleFromRecordedIpns(charge) {
   }
 }
 
+/* Background reconciliation — the guarantee that a verified payment never
+   stays unconfirmed just because nobody was looking. Every couple of minutes
+   (driven from server.js) each unclaimed verified successful payment is
+   re-matched against the open pay-link charges under the same rules the
+   webhook applies: reference hint first, then unique amount, then the
+   fresh-attempt tie-break, then a unique fingerprint. Ambiguity keeps a
+   payment unclaimed for the admin — it is never guessed away. */
+async function reconcileMcashPayments() {
+  const list = (await store.settings.get('mcash_ipns')) || [];
+  const unclaimed = list.filter((p) => p.verified && !p.matchedReference && mcash.mapStatus(p.status) === 'success');
+  if (!unclaimed.length) return;
+  const open = await store.charges.pendingPaylink();
+  if (!open.length) return;
+  let dirty = false;
+
+  for (const rec of unclaimed) {
+    const minor = mcash.toMinor(rec.amount);
+    const fits = (c) => c.status === 'pending' && (c.mcashPayAmount === minor || fees.payableAmount(c) === minor);
+
+    let target = rec.chargeRefHint ? (open.find((c) => c.reference === rec.chargeRefHint && fits(c)) || null) : null;
+    if (!target) {
+      const cands = open.filter(fits);
+      if (cands.length === 1) target = cands[0];
+      else if (cands.length > 1) {
+        const fresh = cands.filter((c) => Date.now() - (c.lastAttemptAt || 0) <= 30 * 60_000);
+        if (fresh.length === 1) target = fresh[0];
+        if (!target) {
+          /* Fingerprints are minted unique among open charges, so an exact
+             fingerprint hit identifies the payer even in a crowd. */
+          const fp = cands.filter((c) => c.mcashPayAmount === minor);
+          if (fp.length === 1) target = fp[0];
+        }
+      }
+    }
+    if (!target) continue;
+
+    await saveChargeWithRetry(target, (c) => applyMcashStatus(c, rec.status, {
+      raw: { amount: rec.amount, currency: rec.currency, payment_trx_id: rec.transactionId },
+    }));
+    await emitWebhookIfTerminal(target);
+    if (target.status === 'success') {
+      rec.matchedReference = target.reference;
+      rec.autoSettled = true;
+      dirty = true;
+      console.log('[MCASH reconcile] settled', JSON.stringify({ reference: target.reference, amount: rec.amount }));
+    }
+  }
+  if (dirty) await store.settings.set('mcash_ipns', list);
+}
+router.reconcileMcashPayments = reconcileMcashPayments;
+
 router.get('/charges/:reference/poll', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
   if (charge.status === 'success' || charge.status === 'failed') return res.json({ charge, next: charge.status });
