@@ -330,7 +330,7 @@ function formFor(m){
     <div class="hint">${info}A one-time virtual bank account will be generated. Transfer the exact amount to complete your payment.</div>
     ${payBtn('Get account number')}`;
   if(m==='transfer') return `
-    <div class="hint">${info}Transfer the exact amount to one of the accounts below. Use your payment reference as the narration.</div>
+    <div class="hint">${info}Transfer the exact amount to the account shown on the next screen. Use your payment reference as the narration.</div>
     ${payBtn('View account details')}`;
   if(m==='ussd'){
     const NG_BANKS=[['737','GTBank'],['966','Zenith Bank'],['919','UBA'],['894','First Bank'],['901','Access Bank'],['822','Sterling Bank'],['833','Polaris Bank']];
@@ -817,11 +817,12 @@ async function boot(){
   }
   await infoP;
   if(!TEST_MODE){const tb=document.querySelector('.testbadge');if(tb)tb.style.display='none';}
-  /* Pre-fetch static bank accounts for the charge currency */
+  /* The server assigns this charge one bank account (random among the active
+     ones) and returns the same one on every load. */
   if(S.charge){
     try{
-      const {accounts}=await API.get('/api/bank-accounts?currency='+encodeURIComponent(ccy()));
-      S.staticAccounts=accounts||[];
+      const {account}=await API.get('/api/charges/'+encodeURIComponent(S.charge.reference)+'/bank-account');
+      S.staticAccounts=account?[account]:[];
     }catch(e){ S.staticAccounts=[]; }
   }
   routeFromCharge();

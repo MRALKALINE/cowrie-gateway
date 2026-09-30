@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const crypto = require('crypto');
 const store = require('../lib/store');
 const cfg = require('../lib/config');
 const payments = require('../lib/payments');
@@ -391,7 +392,13 @@ router.get('/transactions', requireAuth, ah(async (req, res) => {
   const mode = req.mode || 'test';
   const raw = all.filter(c => (c.mode || 'test') === mode);
   const rates = await fx.getRates();
-  const transactions = raw.map(c => ({ ...c, amountGhs: fx.toGhsMinor(c.amount, c.currency, rates) }));
+  /* amountGhs / amountNgn are each charge's share of the GHS and NGN balances —
+     one of the two is always zero, so the dashboard can total them apart. */
+  const transactions = raw.map(c => ({
+    ...c,
+    amountGhs: fx.toBalanceMinor(c.amount, c.currency, 'GHS', rates),
+    amountNgn: fx.toBalanceMinor(c.amount, c.currency, 'NGN', rates),
+  }));
   res.json({ transactions });
 }));
 
@@ -909,23 +916,25 @@ router.delete('/admin/members/:merchantId', writeLimiter, requireAdminAuth, ah(a
     store.payouts.forMerchant(merchant.id),
     fx.getRates(),
   ]);
-  const liveGross = charges
-    .filter((c) => c.status === 'success' && (c.mode || 'test') === 'live')
-    .reduce((s, c) => s + fx.toGhsMinor(c.amount, c.currency, rates), 0);
-  const livePaidOut = payouts
-    .filter((p) => p.status === 'completed' && (p.mode || 'test') === 'live')
-    .reduce((s, p) => s + p.amount, 0);
-  const held = Math.max(0, liveGross - livePaidOut);
+  const heldBy = fx.BALANCE_CURRENCIES.map((ccy) => {
+    const liveGross = charges
+      .filter((c) => c.status === 'success' && (c.mode || 'test') === 'live')
+      .reduce((s, c) => s + fx.toBalanceMinor(c.amount, c.currency, ccy, rates), 0);
+    const livePaidOut = payouts
+      .filter((p) => p.status === 'completed' && (p.mode || 'test') === 'live' && fx.balanceCurrency(p.currency) === ccy)
+      .reduce((s, p) => s + p.amount, 0);
+    return [ccy, Math.max(0, liveGross - livePaidOut)];
+  }).filter(([, amt]) => amt > 0);
 
   const force = String((req.body && req.body.force) || req.query.force || '') === 'true';
-  if (held > 0 && !force) {
+  if (heldBy.length && !force) {
     const e = new Error(
-      `This merchant still holds GHS ${(held / 100).toFixed(2)}. Pay it out first, or deactivate the account instead of deleting it.`,
+      `This merchant still holds ${heldBy.map(([ccy, amt]) => `${ccy} ${(amt / 100).toFixed(2)}`).join(' and ')}. Pay it out first, or deactivate the account instead of deleting it.`,
     );
     e.status = 409; throw e;
   }
-  if (held > 0 && force) {
-    console.warn(`[admin] ${req.adminEmail} force-deleted ${merchant.id} (${merchant.businessName}) holding GHS ${(held / 100).toFixed(2)}`);
+  if (heldBy.length && force) {
+    console.warn(`[admin] ${req.adminEmail} force-deleted ${merchant.id} (${merchant.businessName}) holding ${heldBy.map(([ccy, amt]) => `${ccy} ${(amt / 100).toFixed(2)}`).join(' and ')}`);
   }
 
   /* Records go before the merchant: if this fails half-way the merchant row
@@ -1295,12 +1304,19 @@ router.get('/payouts', requireAuth, ah(async (req, res) => {
 }));
 
 router.post('/payouts', writeLimiter, requireAuth, requireActive, ah(async (req, res) => {
-  const { amount, method, bank, accountNumber, accountName, mobileProvider, mobileNumber, note } = req.body || {};
+  const { amount, currency, method, bank, accountNumber, accountName, mobileProvider, mobileNumber, note } = req.body || {};
+  const payoutCurrency = String(currency || 'GHS').toUpperCase();
+  if (!fx.BALANCE_CURRENCIES.includes(payoutCurrency)) {
+    const e = new Error(`currency must be one of ${fx.BALANCE_CURRENCIES.join(', ')}.`); e.status = 400; throw e;
+  }
+  if (payoutCurrency === 'NGN' && method === 'mobile_money') {
+    const e = new Error('Naira payouts go to a bank account.'); e.status = 400; throw e;
+  }
 
   /* Validate before rounding: Math.round(Infinity) is Infinity, which passes a
      bare `<= 0` test and is then serialised to null. */
   const rawAmt = Number(amount);
-  if (!Number.isFinite(rawAmt) || rawAmt <= 0 || rawAmt > MAX_AMOUNT_MINOR) {
+  if (!Number.isFinite(rawAmt) || rawAmt <= 0 || rawAmt > payments.MAX_AMOUNT_MINOR) {
     const e = new Error('Enter a valid amount.'); e.status = 400; throw e;
   }
   const amt = Math.round(rawAmt);
@@ -1315,17 +1331,20 @@ router.post('/payouts', writeLimiter, requireAuth, requireActive, ah(async (req,
     store.payouts.forMerchant(req.merchant.id),
     fx.getRates(),
   ]);
+  /* Each currency's balance is checked on its own: naira collected cannot fund
+     a cedi payout, or the other way round. */
   const liveGross = ownCharges
     .filter((c) => c.status === 'success' && (c.mode || 'test') === 'live')
-    .reduce((sum, c) => sum + fx.toGhsMinor(c.amount, c.currency, payoutRates), 0);
+    .reduce((sum, c) => sum + fx.toBalanceMinor(c.amount, c.currency, payoutCurrency, payoutRates), 0);
   const alreadyOut = ownPayouts
-    .filter((pp) => ['completed', 'pending', 'processing'].includes(pp.status) && (pp.mode || 'test') === 'live')
+    .filter((pp) => ['completed', 'pending', 'processing'].includes(pp.status) && (pp.mode || 'test') === 'live'
+      && fx.balanceCurrency(pp.currency) === payoutCurrency)
     .reduce((sum, pp) => sum + pp.amount, 0);
   const availableToPayOut = Math.max(0, liveGross - alreadyOut);
 
   if (amt > availableToPayOut) {
     const e = new Error(
-      `You can request up to GHS ${(availableToPayOut / 100).toFixed(2)}. That is your collected balance less payouts already completed or awaiting approval.`,
+      `You can request up to ${payoutCurrency} ${(availableToPayOut / 100).toFixed(2)}. That is your collected ${payoutCurrency} balance less payouts already completed or awaiting approval.`,
     );
     e.status = 400; throw e;
   }
@@ -1337,7 +1356,7 @@ router.post('/payouts', writeLimiter, requireAuth, requireActive, ah(async (req,
   }
   const payout = await store.payouts.insert({
     id: genId('pyt_'), merchantId: req.merchant.id,
-    amount: amt, currency: 'GHS',
+    amount: amt, currency: payoutCurrency,
     mode: req.mode || 'test',
     method: method || 'bank',
     bank: String(bank || '').trim(),
@@ -1438,11 +1457,33 @@ router.put('/admin/bank-accounts', writeLimiter, requireAdminAuth, ah(async (req
   res.json({ accounts: cleaned });
 }));
 
-router.get('/bank-accounts', ah(async (req, res) => {
-  const all = (await store.settings.get('bank_accounts')) || [];
-  const { currency } = req.query;
-  const accounts = all.filter(a => a.active !== false && (!currency || a.currency === currency));
-  res.json({ accounts });
+/* The payer sees ONE account, picked at random from the active ones for the
+   charge's currency, so deposits spread across the accounts. The pick is saved
+   on the charge: a reload shows the same account, and the admin checking the
+   transfer knows which bank statement to look at. Listing every account to
+   anyone who asked was dropped for the same reason — only a payer holding a
+   charge reference gets an account, and only the one assigned to them. */
+function publicBankAccount(a) {
+  return { bankName: a.bankName, accountNumber: a.accountNumber, accountName: a.accountName, currency: a.currency };
+}
+
+router.get('/charges/:reference/bank-account', payLimiter, loadCharge, ah(async (req, res) => {
+  let charge = req.charge;
+  const currency = charge.currency || 'GHS';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (charge.bankAccount) return res.json({ account: publicBankAccount(charge.bankAccount) });
+    if (charge.status !== 'pending') return res.json({ account: null });
+    const all = (await store.settings.get('bank_accounts')) || [];
+    const active = all.filter(a => a.active !== false && a.currency === currency);
+    if (!active.length) return res.json({ account: null });
+    const pick = active[crypto.randomInt(active.length)];
+    charge.bankAccount = { id: pick.id, ...publicBankAccount(pick) };
+    if (await store.charges.update(charge)) return res.json({ account: publicBankAccount(charge.bankAccount) });
+    /* Lost a race with another write (a second tab, a poll) — reload and use
+       whatever account that write assigned, or try again. */
+    charge = await store.charges.byReference(charge.reference);
+  }
+  throw Object.assign(new Error('Could not assign a bank account. Try again.'), { status: 409 });
 }));
 
 /* Called by checkout when customer views static bank details — emails admin once per charge */

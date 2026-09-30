@@ -657,6 +657,21 @@ let revPeriodIdx = Number(localStorage.getItem('kp_rev_period') || 0);
 if (!PERIODS[revPeriodIdx]) revPeriodIdx = 0;
 
 /* Successful charges bucketed by the day they were paid, newest first. */
+/* GHS and NGN are separate balances: naira is never converted to cedis. Each
+   is successful payments in that currency less completed payouts in it — the
+   same figure the server enforces when a payout is requested. */
+function balances(successful,payouts){
+  const out={};
+  [['GHS','amountGhs'],['NGN','amountNgn']].forEach(([c,field])=>{
+    const gross=successful.reduce((s,t)=>s+(t[field]??(c==='GHS'?t.amount:0)),0);
+    const done=payouts.filter(p=>(p.currency||'GHS')===c);
+    const out_=done.filter(p=>p.status==='completed').reduce((s,p)=>s+p.amount,0);
+    const pending=done.filter(p=>p.status==='pending'||p.status==='processing').reduce((s,p)=>s+p.amount,0);
+    out[c]={gross,out:out_,pending,available:Math.max(0,gross-out_)};
+  });
+  return out;
+}
+
 function revenueBuckets(successful){
   const out = [];
   for (let i = 0; i < 7; i++) {
@@ -835,11 +850,13 @@ async function renderOverview(el){
   const failed=transactions.filter(t=>t.status==='failed');
   const pending=transactions.filter(t=>t.status==='pending');
   const ccy='GHS';
-  const grossCollected=success.reduce((s,t)=>s+(t.amountGhs??t.amount),0);
-  const completedPayouts=payouts.filter(p=>p.status==='completed').reduce((s,p)=>s+p.amount,0);
-  const collected=Math.max(0,grossCollected-completedPayouts);
+  const bal=balances(success,payouts);
+  const grossCollected=bal.GHS.gross;
+  const collected=bal.GHS.available;
+  const ngn=bal.NGN;
   const rate=transactions.length?((success.length/transactions.length)*100).toFixed(1):'0.0';
-  const pendingPayout=payouts.filter(p=>p.status==='pending').reduce((s,p)=>s+p.amount,0);
+  const pendingPayout=payouts.filter(p=>p.status==='pending'&&(p.currency||'GHS')==='GHS').reduce((s,p)=>s+p.amount,0);
+  const pendingPayoutNgn=payouts.filter(p=>p.status==='pending'&&p.currency==='NGN').reduce((s,p)=>s+p.amount,0);
 
   /* Revenue today. Dated by paidAt — when the money actually arrived — falling
      back to createdAt for older records that predate that field. `transactions`
@@ -902,6 +919,7 @@ async function renderOverview(el){
         <div class="kl">Available balance</div>
         <div class="kv">${fmt(collected,ccy)}</div>
         <div class="ks">${success.length} payment${success.length!==1?'s':''} · ${fmt(grossCollected,ccy)} gross</div>
+        ${ngn.gross||ngn.out?`<div class="ks" style="margin-top:6px"><strong style="color:var(--ink)">${fmt(ngn.available,'NGN')}</strong> naira balance</div>`:''}
       </div>
       <div class="kpi-tile r3d">
         <div class="kl">Success rate</div>
@@ -916,6 +934,7 @@ async function renderOverview(el){
       <div class="kpi-tile r3d">
         <div class="kl">Payout pending</div>
         <div class="kv">${fmt(pendingPayout,'GHS')}</div>
+        ${pendingPayoutNgn?`<div class="ks" style="margin-top:4px"><strong style="color:var(--ink)">${fmt(pendingPayoutNgn,'NGN')}</strong> naira</div>`:''}
         <div class="ks">${payouts.filter(p=>p.status==='pending').length} request${payouts.filter(p=>p.status==='pending').length!==1?'s':''} awaiting</div>
       </div>
     </div>
@@ -1171,27 +1190,28 @@ async function renderRequestPayout(el){
   const [{transactions},{payouts}]=await Promise.all([
     API.get('/api/transactions'),API.get('/api/payouts'),
   ]);
-  const grossCollected=transactions.filter(t=>t.status==='success')
-    .reduce((s,t)=>s+(t.amountGhs??t.amount),0);
-  const paidOut=payouts.filter(p=>p.status==='completed').reduce((s,p)=>s+p.amount,0);
-  const pendingOut=payouts.filter(p=>p.status==='pending'||p.status==='processing')
-    .reduce((s,p)=>s+p.amount,0);
-  const available=Math.max(0,grossCollected-paidOut);
+  const bal=balances(transactions.filter(t=>t.status==='success'),payouts);
+  /* The currency selector only appears once there is naira to pay out;
+     until then this page looks exactly as it did for a GHS-only merchant. */
+  const hasNgn=!!(bal.NGN.gross||bal.NGN.out||bal.NGN.pending);
+  let pyCcy='GHS';
 
   const locked = !!(M && M.locked);
 
   el.innerHTML=`
     ${lockNotice('Requesting a payout')}
     <div class="panel r3d" style="margin-bottom:16px">
+      ${hasNgn?`<div style="padding:14px 20px 0"><div class="method-tabs" style="margin:0">
+        <button class="method-tab on" id="ccyGHS">GHS balance</button>
+        <button class="method-tab" id="ccyNGN">NGN balance</button>
+      </div></div>`:''}
       <div style="padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
         <div>
           <div class="kl" style="font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)">Available balance</div>
-          <div style="font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.02em;margin-top:4px;color:#8FE3EC">${fmt(available,'GHS')}</div>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:4px">
-            ${fmt(grossCollected,'GHS')} collected · ${fmt(paidOut,'GHS')} paid out${pendingOut?` · ${fmt(pendingOut,'GHS')} awaiting approval`:''}
-          </div>
+          <div id="pyAvail" style="font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.02em;margin-top:4px;color:#8FE3EC"></div>
+          <div id="pyAvailSub" style="font-size:11.5px;color:var(--muted);margin-top:4px"></div>
         </div>
-        <button class="btn sm" id="pyUseMax" ${available?'':'disabled'}>Request full amount</button>
+        <button class="btn sm" id="pyUseMax">Request full amount</button>
       </div>
     </div>
     <div class="panel r3d">
@@ -1230,7 +1250,7 @@ async function renderRequestPayout(el){
           </div>
         </div>
 
-        <div class="field"><div class="lbl">Amount (GHS)</div><input id="pyAmount" type="number" min="1" step="0.01" placeholder="e.g. 500.00"></div>
+        <div class="field"><div class="lbl" id="pyAmountLbl">Amount (GHS)</div><input id="pyAmount" type="number" min="1" step="0.01" placeholder="e.g. 500.00"></div>
 
         <button class="btn primary" id="submitPayout" style="width:100%;padding:12px;border-radius:12px">Submit request</button>
         <div class="fb" id="pyFb"></div>
@@ -1245,11 +1265,31 @@ async function renderRequestPayout(el){
     document.getElementById('tabBank').className='method-tab'+(isBank?' on':'');
     document.getElementById('tabMomo').className='method-tab'+(isBank?'':' on');
   }
+  /* Switching currency swaps the balance shown and the limits applied. Naira
+     is paid out to a Nigerian bank account only, so mobile money is hidden. */
+  function setCcy(c){
+    pyCcy=c;
+    const b=bal[c];
+    document.getElementById('pyAvail').textContent=fmt(b.available,c);
+    document.getElementById('pyAvailSub').textContent=
+      `${fmt(b.gross,c)} collected · ${fmt(b.out,c)} paid out${b.pending?` · ${fmt(b.pending,c)} awaiting approval`:''}`;
+    document.getElementById('pyUseMax').disabled=!b.available||locked;
+    document.getElementById('pyAmountLbl').textContent=`Amount (${c})`;
+    document.getElementById('pyBank').placeholder=c==='NGN'?'e.g. Access Bank':'e.g. GCB Bank';
+    document.getElementById('tabMomo').style.display=c==='NGN'?'none':'';
+    if(c==='NGN') setTab('bank');
+    ['GHS','NGN'].forEach(x=>{const t=document.getElementById('ccy'+x);if(t)t.className='method-tab'+(x===c?' on':'');});
+  }
+  if(hasNgn){
+    document.getElementById('ccyGHS').addEventListener('click',()=>setCcy('GHS'));
+    document.getElementById('ccyNGN').addEventListener('click',()=>setCcy('NGN'));
+  }
+  setCcy('GHS');
   /* Fills the amount with everything available, in major units to match
      the input, which is what the merchant types. */
   document.getElementById('pyUseMax').addEventListener('click',()=>{
     const f=document.getElementById('pyAmount');
-    f.value=(available/100).toFixed(2);
+    f.value=(bal[pyCcy].available/100).toFixed(2);
     f.focus();
   });
   if(locked){
@@ -1270,7 +1310,7 @@ async function renderRequestPayout(el){
     const amount=parseFloat(document.getElementById('pyAmount').value)||0;
     if(!amount||amount<=0){fb.textContent='Please enter a valid amount.';fb.className='fb bad';return;}
     const body={
-      method,amount:Math.round(amount*100),
+      method,amount:Math.round(amount*100),currency:pyCcy,
       bank:document.getElementById('pyBank').value.trim(),
       accountNumber:document.getElementById('pyAccNum').value.trim(),
       accountName:document.getElementById('pyAccName').value.trim(),
@@ -1308,7 +1348,7 @@ async function renderPayoutHistory(el){
         <td data-label="Date" style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${fmtDate(p.createdAt)}</td>
         <td data-label="Method">${p.method==='mobile_money'?'Mobile money':'Bank transfer'}</td>
         <td data-label="Destination" style="font-size:12.5px">${dest}</td>
-        <td data-label="Amount" style="font-family:var(--mono);font-weight:700">${fmt(p.amount,'GHS')}</td>
+        <td data-label="Amount" style="font-family:var(--mono);font-weight:700">${fmt(p.amount,p.currency||'GHS')}</td>
         <td data-label="Note" style="font-size:12px;color:var(--muted)">${esc(p.note||'—')}</td>
         <td data-label="Status">${statusTag(p.status)}</td>
       </tr>`;
