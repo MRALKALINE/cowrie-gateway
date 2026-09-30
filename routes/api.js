@@ -1430,7 +1430,7 @@ router.post('/admin/new-payment', writeLimiter, requireAdminAuth, ah(async (req,
 /* ========================= Bank accounts (manual transfer) ========================= */
 
 const NG_BANKS = [
-  'Access Bank','Citibank Nigeria','Ecobank Nigeria','Fidelity Bank','First Bank of Nigeria',
+  'Access Bank','Carbon','Citibank Nigeria','Ecobank Nigeria','Fidelity Bank','First Bank of Nigeria',
   'First City Monument Bank','Globus Bank','Guaranty Trust Bank','Heritage Bank','Keystone Bank',
   'Kuda Bank','Moniepoint Microfinance Bank','OPay','Paga','Palmpay','Polaris Bank','Providus Bank',
   'Stanbic IBTC Bank','Standard Chartered Bank','Sterling Bank','Suntrust Bank','Union Bank',
