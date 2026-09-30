@@ -1347,7 +1347,8 @@ async function renderConfirmations(el){
       <div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         ${t.mcashPaylink ? `<span class="badge" style="background:rgba(115,103,240,.14);color:#7367f0;border-color:rgba(115,103,240,.3)">MCASH pay-link</span>` : ''}
         ${t.bankAccount ? `<span class="badge" title="The account this payer was shown — check this statement" style="background:rgba(224,161,46,.12);color:var(--ink-soft);border-color:rgba(224,161,46,.3)">Paid to ${esc(t.bankAccount.bankName)} · ${esc(t.bankAccount.accountNumber)}</span>` : ''}
-        ${t.payerName ? `<span style="font-size:13px;color:var(--ink-soft)">${esc(t.payerName)}</span><span style="color:var(--line);font-size:12px">·</span>` : ''}
+        ${t.payerName ? `<span style="font-size:13px;color:var(--ink-soft)" title="Sender name the payer gave">${esc(t.payerName)}</span><span style="color:var(--line);font-size:12px">·</span>` : ''}
+        ${t.transferReference ? `<span style="font-size:12px;color:var(--ink-soft);font-family:var(--mono)" title="Transfer reference from the payer's bank receipt">Ref ${esc(t.transferReference)}</span><span style="color:var(--line);font-size:12px">·</span>` : ''}
         ${t.customerEmail ? `<span style="font-size:13px;color:var(--ink-soft)">${esc(t.customerEmail)}</span><span style="color:var(--line);font-size:12px">·</span>` : ''}
         <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">${timeAgo(t.createdAt)}</span>
         <div style="margin-left:auto;display:flex;gap:8px;flex-shrink:0">

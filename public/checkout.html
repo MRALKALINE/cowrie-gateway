@@ -571,10 +571,36 @@ function renderStaticTransfer(b){
       <span>Use the reference above as the payment narration / description.</span>
       <span style="color:var(--faint)">Your order will be confirmed once we receive your transfer.</span>
     </div>
-    <button class="pay" id="paidBtn" style="margin-top:16px;background:linear-gradient(135deg,#1A9B6E,#15825d)">I've made the payment ✓</button>`;
+    <div class="field" style="margin-top:16px"><label>Sender name</label>
+      <input id="senderName" type="text" maxlength="100" autocomplete="name" placeholder="Name that will show on the transfer" value="${esc(S.senderName||'')}">
+      <div class="err" id="senderNameErr">Enter the name on the account you are sending from</div></div>
+    <div class="field"><label>Transfer reference number</label>
+      <input id="transferRef" class="mono" type="text" maxlength="64" autocomplete="off" placeholder="From your bank app receipt" value="${esc(S.transferRef||'')}">
+      <div class="err" id="transferRefErr">Enter the reference number from your transfer receipt</div></div>
+    <div class="err" id="paidErr" style="text-align:center"></div>
+    <button class="pay" id="paidBtn" style="margin-top:16px;background:linear-gradient(135deg,#1A9B6E,#15825d)"><span class="spin"></span><span class="lbl">I've made the payment ✓</span></button>`;
   b.querySelectorAll('.copy').forEach(c=>c.addEventListener('click',()=>{navigator.clipboard&&navigator.clipboard.writeText(c.dataset.c).catch(()=>{});c.textContent='copied!';setTimeout(()=>c.textContent='copy',1200);}));
   $('#back').addEventListener('click',()=>go('form'));
-  $('#paidBtn').addEventListener('click',()=>go('transfer_sent'));
+  /* The admin matches the transfer against the bank statement using these
+     two details, so both are required before we say the payment was sent. */
+  $('#paidBtn').addEventListener('click',async function(){
+    const name=($('#senderName').value||'').trim(), tref=($('#transferRef').value||'').trim();
+    S.senderName=name; S.transferRef=tref;
+    $('#senderNameErr').classList.toggle('show',!name);
+    $('#transferRefErr').classList.toggle('show',!tref);
+    if(!name){$('#senderName').focus();return;}
+    if(!tref){$('#transferRef').focus();return;}
+    const btn=this, perr=$('#paidErr');
+    btn.disabled=true; btn.classList.add('loading'); perr.classList.remove('show');
+    try{
+      await API.post(`/api/charges/${encodeURIComponent(S.charge.reference)}/notify-transfer`,{senderName:name,transferReference:tref});
+      S.transferNotified=true;
+      go('transfer_sent');
+    }catch(err){
+      perr.textContent=err.message; perr.classList.add('show');
+      btn.disabled=false; btn.classList.remove('loading');
+    }
+  });
   startPolling();
 }
 
@@ -609,7 +635,7 @@ function renderPaylink(b){
 
 function renderTransferSent(b){
   /* Notify admin that customer has confirmed they sent funds */
-  if(S.charge) fetch(`/api/charges/${encodeURIComponent(S.charge.reference)}/notify-transfer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payerName:S.payerName})}).catch(()=>{});
+  if(S.charge&&!S.transferNotified) fetch(`/api/charges/${encodeURIComponent(S.charge.reference)}/notify-transfer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payerName:S.payerName})}).catch(()=>{});
   const cbUrl=backUrl();
   b.innerHTML=`<div class="state">
     <div class="ic" style="background:#e8f8f1;color:#1A9B6E"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>

@@ -1489,11 +1489,29 @@ router.get('/charges/:reference/bank-account', payLimiter, loadCharge, ah(async 
 /* Called by checkout when customer views static bank details — emails admin once per charge */
 router.post('/charges/:reference/notify-transfer', payLimiter, loadCharge, ah(async (req, res) => {
   const charge = req.charge;
-  const { payerName } = req.body || {};
-  if (payerName && String(payerName).trim() && !charge.payerName) charge.payerName = String(payerName).trim();
+  const { payerName, senderName, transferReference } = req.body || {};
+  /* A bank transfer is matched by hand against the bank statement, so the payer
+     must say what will show there: the sender name on the transfer and the
+     transaction reference from their bank receipt. No screenshot is asked
+     for — these two are what the statement actually shows. The first
+     submission is kept, so a later call cannot rewrite what the admin checks. */
+  if (charge.bankAccount) {
+    const name = String(senderName || '').trim().slice(0, 100);
+    const tref = String(transferReference || '').trim().slice(0, 64);
+    if (!name || !tref) {
+      throw Object.assign(new Error('Enter the sender name and the transfer reference number.'), { status: 400 });
+    }
+    if (!charge.transferNotified) { charge.payerName = name; charge.transferReference = tref; }
+  } else if (payerName && String(payerName).trim() && !charge.payerName) {
+    charge.payerName = String(payerName).trim();
+  }
   if (charge.transferNotified) { await store.charges.update(charge); return res.json({ ok: true }); }
   charge.transferNotified = true;
-  await store.charges.update(charge);
+  /* A concurrent write (the checkout's status poll) would otherwise drop the
+     sender details silently; failing lets the checkout resubmit them. */
+  if (!(await store.charges.update(charge))) {
+    throw Object.assign(new Error('Please tap the button again.'), { status: 409 });
+  }
   const toList = await adminEmails();
   if (toList.length) {
     const merchant = await store.merchants.byId(charge.merchantId);
@@ -1502,6 +1520,9 @@ router.post('/charges/:reference/notify-transfer', payLimiter, loadCharge, ah(as
       amount: charge.amount,
       currency: charge.currency || 'GHS',
       merchantName: merchant ? merchant.businessName : 'Unknown',
+      senderName: charge.bankAccount ? charge.payerName : null,
+      transferReference: charge.transferReference || null,
+      bankAccount: charge.bankAccount || null,
     }).catch(err => console.warn('[transfer-alert]', err.message));
   }
   res.json({ ok: true });
