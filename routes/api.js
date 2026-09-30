@@ -2442,6 +2442,45 @@ router.post('/admin/kyc/:merchantId/approve', writeLimiter, requireAdminAuth, ah
   res.json({ merchant: publicMerchant(merchant) });
 }));
 
+/* Admin-created merchant account. Self-registration proves the email with an
+   OTP; here the admin vouches for the merchant instead, so the account is
+   created already verified. A password is generated when none is given and
+   returned once in the response, along with the keys. */
+router.post('/admin/merchants', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const { businessName, email, password } = req.body || {};
+  const name = String(businessName || '').trim();
+  const lcEmail = String(email || '').trim().toLowerCase();
+  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(lcEmail)) {
+    const e = new Error('businessName and a valid email are required.'); e.status = 400; throw e;
+  }
+  if (password != null && String(password).length < 8) {
+    const e = new Error('password must be at least 8 characters.'); e.status = 400; throw e;
+  }
+  if (await store.merchants.byEmail(lcEmail)) {
+    const e = new Error('An account with this email already exists.'); e.status = 409; throw e;
+  }
+  const pw = password != null ? String(password) : crypto.randomBytes(12).toString('base64url');
+  const merchant = await store.merchants.insert({
+    id: merchantId(),
+    businessName: name,
+    email: lcEmail,
+    passwordHash: hashPassword(pw),
+    publicKey:     apiKey('public', 'test'),
+    secretKey:     apiKey('secret', 'test'),
+    livePublicKey: apiKey('public', 'live'),
+    liveSecretKey: apiKey('secret', 'live'),
+    webhookSecret: 'whsec_' + apiKey('secret', 'test').slice(16),
+    webhookUrl: null,
+    demo: false,
+    kycStatus: 'approved',
+    kycReviewedAt: Date.now(),
+    createdBy: req.adminEmail || 'admin',
+    createdAt: Date.now(),
+  });
+  console.log(`[admin] ${req.adminEmail} created merchant ${merchant.id} (${name})`);
+  res.status(201).json({ merchant: publicMerchant(merchant), password: password != null ? undefined : pw });
+}));
+
 router.post('/admin/kyc/:merchantId/reject', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const merchant = await store.merchants.byId(req.params.merchantId);
   if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
