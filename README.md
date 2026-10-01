@@ -98,13 +98,41 @@ const { charge } = await res.json();
 server.js            Express app + page routing + demo seed
 routes/api.js        all REST endpoints + auth/rate-limit middleware
 lib/payments.js       charge state machine (the gateway logic)
+lib/partners.js       partner attribution, PIN auth, earned-vs-withdrawn balance
 lib/webhooks.js       signed webhook dispatch
 lib/store.js          JSON persistence (swap for Postgres in prod)
 lib/util.js           scrypt hashing, HMAC tokens, Luhn, key/ID generation
 lib/config.js         secret + port + currency
-public/              index.html · login.html · checkout.html · dashboard.html · admin.html
-data/db.json         created at runtime
+public/              index · login · register · checkout · dashboard · partner · admin
 ```
+
+## Partners
+
+Partners are people who bring deposits to a merchant and earn a share of them.
+An admin creates them from **Members → a merchant → Partners**, which gives them
+a hosted link (`/p/<code>`) and a commission rate.
+
+Each partner can then sign in at **`/partner`** with their code and a PIN the
+admin sets on their card, see what they have earned, and withdraw it. Set the
+PIN from the same Partners panel — until one is set they cannot sign in.
+
+Withdrawal is deliberately unrestricted: no minimum, no daily cap, no cooldown,
+no fee, no approval step and no KYC gate. A partner takes any part of what they
+have earned, as often as they like. The only limit is that they cannot withdraw
+more than they have actually earned.
+
+A request is recorded as `pending` and appears under **Admin → Payouts** next
+to the merchant requests. Nothing sends the money automatically — mark it done
+once you have sent it.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/partner/login` | `{ code, pin }` → `{ token, partner }` |
+| `GET  /api/partner/me` | balance, earnings and withdrawal history |
+| `POST /api/partner/withdraw` | `{ method, amount, …destination }` |
+
+Admin-only: `PUT /api/admin/members/:merchantId/partners/:partnerId/pin`,
+`GET /api/admin/partner-payouts`, `POST /api/admin/partner-payouts/:id/complete`.
 
 ## Going to production (what to change)
 - Replace `lib/store.js` with a real database (Postgres + Prisma).

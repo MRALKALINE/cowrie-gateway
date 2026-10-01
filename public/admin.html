@@ -1465,20 +1465,69 @@ async function renderPayouts(el){
     <div class="panel r3d">
       <div class="panel-head"><h2>Payout requests from merchants</h2><span class="badge">${payouts.length} total</span></div>
       <div style="overflow:auto;">${payoutsTable(payouts)}</div>
-    </div>`;
+    </div>
+    <div class="panel r3d" id="ppWrap"></div>`;
 
   el.addEventListener('click', async e=>{
     const btn = e.target.closest('button[data-complete]');
-    if(!btn) return;
-    btn.disabled=true; btn.textContent='…';
+    if(btn){
+      btn.disabled=true; btn.textContent='…';
+      try{
+        await API.post(`/api/admin/payouts/${encodeURIComponent(btn.dataset.complete)}/complete`,{});
+        await renderPayouts(el);
+      }catch(err){
+        alert(err.message);
+        btn.disabled=false; btn.textContent='Mark done';
+      }
+      return;
+    }
+    /* Partner withdrawals are the same action against a different table — kept
+       on the same screen because both are "money somebody asked for that a
+       human has to go and send". */
+    const pb = e.target.closest('button[data-ppcomplete]');
+    if(!pb) return;
+    pb.disabled=true; pb.textContent='…';
     try{
-      await API.post(`/api/admin/payouts/${encodeURIComponent(btn.dataset.complete)}/complete`,{});
+      await API.post(`/api/admin/partner-payouts/${encodeURIComponent(pb.dataset.ppcomplete)}/complete`,{});
       await renderPayouts(el);
     }catch(err){
       alert(err.message);
-      btn.disabled=false; btn.textContent='Mark done';
+      pb.disabled=false; pb.textContent='Mark sent';
     }
   });
+
+  /* Loaded after the merchant table rather than in the same await: this is a
+     secondary panel, and the page is useful without it. */
+  const ppWrap = el.querySelector('#ppWrap');
+  try{
+    const {payouts: pp} = await API.get('/api/admin/partner-payouts');
+    const pPending = pp.filter(r=>r.status==='pending').length;
+    ppWrap.innerHTML = `
+      <div class="panel-head"><h2>Withdrawals from partners</h2><span class="badge">${pp.length?pPending+' pending · '+pp.length+' total':'none yet'}</span></div>
+      ${pp.length ? `<div style="overflow:auto"><table class="table">
+        <thead><tr>
+          <th>Partner</th><th>Business</th><th>Method</th><th>Send to</th><th>Amount</th><th>Status</th><th>Date</th><th></th>
+        </tr></thead>
+        <tbody>${pp.map(r=>{
+          const dest = r.method==='mobile_money'
+            ? `<span style="font-size:12px">${esc(r.mobileProvider||'')} · ${esc(r.mobileNumber||'')}</span>`
+            : `<span style="font-size:12px">${esc(r.bank||'—')}<br><span style="font-family:var(--mono);font-size:11px">${esc(r.accountNumber||'')} · ${esc(r.accountName||'')}</span></span>`;
+          const canComplete = r.status==='pending';
+          return `<tr>
+            <td data-label="Partner" style="font-weight:700;font-size:13px">${esc(r.partnerName||'—')}</td>
+            <td data-label="Business" style="font-size:12.5px;color:var(--muted)">${esc(r.merchantName||'—')}</td>
+            <td data-label="Method" style="font-size:13px">${r.method==='mobile_money'?'Mobile money':'Bank transfer'}</td>
+            <td data-label="Send to">${dest}</td>
+            <td data-label="Amount" style="font-family:var(--mono);font-weight:800">${fmt(r.amount||0,r.currency||'GHS')}</td>
+            <td data-label="Status">${statusTag(r.status==='completed'?'success':'pending')}</td>
+            <td data-label="Date" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.createdAt)}</td>
+            <td style="text-align:right">${canComplete?`<button class="btn sm" data-ppcomplete="${esc(r.id)}">Mark sent</button>`:'<span style="font-size:11px;color:var(--mint);font-family:var(--mono)">✓ sent</span>'}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`
+        : `<div class="empty-state"><strong>No partner withdrawals yet</strong><br>Partners withdraw from their own page at <span style="font-family:var(--mono)">/partner</span>. Set them a PIN from the member's Partners panel first.</div>`}`;
+  }catch(e){
+    ppWrap.innerHTML = `<div class="empty-state">Could not load partner withdrawals: ${esc(e.message)}</div>`;
+  }
 }
 
 function payoutsTable(rows){
@@ -1770,6 +1819,15 @@ async function renderMembers(el){
             </div>
           </div>
 
+          <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 11px;border:1px solid var(--line-2);border-radius:10px;background:rgba(0,0,0,.2)">
+            <div style="flex:1;min-width:0;font-family:var(--mono);font-size:10.5px;color:var(--muted);line-height:1.5">
+              ${p.hasPin
+                ? 'PIN set — they can sign in at <span style="color:var(--ink-soft)">/partner</span> and withdraw.'
+                : '<span style="color:var(--gold)">No PIN set.</span> They cannot sign in to withdraw until you set one.'}
+            </div>
+            <button class="btn sm" data-ppin="${esc(p.id)}" style="flex-shrink:0;min-height:32px">${p.hasPin?'Change PIN':'Set PIN'}</button>
+          </div>
+
           <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
             <button class="btn sm" data-prate="${esc(p.id)}" style="min-height:34px">Change rate</button>
             <button class="btn sm" data-ptoggle="${esc(p.id)}" style="min-height:34px">${off?'Switch on':'Switch off'}</button>
@@ -1875,6 +1933,29 @@ async function renderMembers(el){
       /* The id list is written into the box on open rather than rendered into
          the card, so a partner with thousands of users does not build a
          thousand-line DOM node nobody asked to see. */
+      /* The PIN is chosen by the admin, not the partner, so an admin can always
+         lock someone out and issue a new one. The response echoes it back in
+         clear exactly once — only the hash is ever stored — so it is copied
+         straight to the partner and never pasted anywhere lasting. */
+      pWrap.querySelectorAll('[data-ppin]').forEach(b=>b.addEventListener('click',async()=>{
+        const p = (last.partners||[]).find(x=>x.id===b.dataset.ppin);
+        if(!p) return;
+        const v = prompt('PIN for "' + p.name + '" (at least 4 characters)\n\nThey sign in at /partner with their code and this PIN. Note it down now — it is not shown again.');
+        if(v===null) return;
+        if(String(v).trim().length < 4){ alert('The PIN must be at least 4 characters.'); return; }
+        b.disabled = true; b.textContent = 'Setting\u2026';
+        try{
+          const r = await API.put(base + '/' + encodeURIComponent(p.id) + '/pin', { pin: String(v).trim() });
+          renderPartners(r.report);
+          if(confirm('PIN for ' + p.name + ' is now:\n\n' + r.pin + '\n\nCopy it to them now — this is the only time it will be shown.')){
+            try{ await navigator.clipboard.writeText(r.pin); }catch{ /* clipboard blocked; the confirm dialog above has it */ }
+          }
+        }catch(e){
+          alert(e.message || 'Could not set the PIN.');
+          if(b.isConnected){ b.disabled = false; b.textContent = p.hasPin ? 'Change PIN' : 'Set PIN'; }
+        }
+      }));
+
       pWrap.querySelectorAll('[data-pusers]').forEach(b=>b.addEventListener('click',()=>{
         const p = (last.partners||[]).find(x=>x.id===b.dataset.pusers);
         const box = document.getElementById('pu_'+p.id);

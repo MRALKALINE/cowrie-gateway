@@ -7,7 +7,7 @@ const payments = require('../lib/payments');
 const nalopay = require('../lib/nalopay');
 const mcash = require('../lib/mcash');
 const webhooks = require('../lib/webhooks');
-const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert, sendSupportMessageAlert, sendSupportReplyNotice } = require('../lib/email');
+const { sendOtp, sendKycApproved, sendKycRejected, sendPendingTransferAlert, sendDepositAlert, sendMerchantDepositNotice, sendPayoutRequestAlert, sendPartnerPayoutAlert, sendSupportMessageAlert, sendSupportReplyNotice } = require('../lib/email');
 const fx = require('../lib/fx');
 const fees = require('../lib/fees');
 const partners = require('../lib/partners');
@@ -942,6 +942,7 @@ router.delete('/admin/members/:merchantId', writeLimiter, requireAdminAuth, ah(a
   await store.charges.clearForMerchant(merchant.id);
   await store.events.clearForMerchant(merchant.id);
   await store.payouts.clearForMerchant(merchant.id);
+  await store.partnerPayouts.clearForMerchant(merchant.id);
   await store.support.clearForMerchant(merchant.id);
   await store.merchants.del(merchant.id);
 
@@ -992,7 +993,11 @@ async function partnerReport(merchant) {
     }
 
     return {
-      ...p,
+      /* publicPartner strips the PIN hash and the (possibly enormous) user-id
+         list; only the count is reported. The rate and the money stay, since
+         this view exists to settle arguments about both. */
+      ...partners.publicPartner(p),
+      userIds: undefined,
       userIdCount: partners.userIds(p).length,
       deposits: paid.length,
       volume: paid.reduce((s, c) => s + (c.amount || 0), 0),
@@ -1181,6 +1186,207 @@ router.delete('/admin/members/:merchantId/partners/:partnerId', writeLimiter, re
   merchant.partners = partners.list(merchant).filter((p) => p.id !== req.params.partnerId);
   await store.merchants.update(merchant);
   res.json(await partnerReport(merchant));
+}));
+
+/* ═══════════════ Partner self-service ════════════════════════════════════
+   The partner's own view: sign in with their code and PIN, see what they have
+   earned, and withdraw it.
+
+   Deliberately generous — no minimum, no daily cap, no cooldown, no fee, no
+   approval step and no KYC gate. A partner moves their own commission as often
+   as they like. The one limit is that they cannot withdraw more than they have
+   actually earned; everything else about the request is theirs to decide.
+
+   Withdrawals are recorded as `pending`, not paid out by this system. Nothing
+   here talks to a mobile-money operator, so the money still has to be sent by
+   a human — the request exists so there is a record of who asked for what and
+   where, not so the balance updates itself. */
+
+async function partnerContext(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    const payload = token && verifyToken(token);
+    if (!payload || payload.role !== 'partner') {
+      const e = new Error('Unauthorized'); e.status = 401; throw e;
+    }
+    const merchant = await store.merchants.byId(payload.mid);
+    if (!merchant) { const e = new Error('Unauthorized'); e.status = 401; throw e; }
+
+    /* The partner is looked up again on every request rather than trusted from
+       the token: an admin can delete a partner or switch one off, and a token
+       issued a minute earlier must not outlive that. */
+    const partner = partners.byId(merchant, payload.pid);
+    if (!partner) { const e = new Error('Unauthorized'); e.status = 401; throw e; }
+    if (partner.active === false) {
+      const e = new Error('This account has been switched off. Please contact the business you work with.');
+      e.status = 403; throw e;
+    }
+
+    req.partner = partner;
+    req.pmerchant = merchant;
+    next();
+  } catch (e) { next(e); }
+}
+
+router.post('/partner/login', authLimiter, ah(async (req, res) => {
+  const code = String((req.body && req.body.code) || '').trim();
+  const pin = String((req.body && req.body.pin) || '');
+
+  const all = await store.merchants.all();
+  const hit = partners.findAnywhere(all, code);
+  const partner = hit && hit.partner;
+
+  /* One message for every failure. Saying "no such code" separately from
+     "wrong PIN" would let anyone enumerate which partner codes are real. */
+  const refuse = () => {
+    const e = new Error('That code and PIN do not match.');
+    e.status = 401; throw e;
+  };
+  if (!partner) refuse();
+  if (partner.active === false) refuse();
+  if (!partners.checkPin(partner, pin)) refuse();
+  if (hit.merchant.locked) {
+    const e = new Error('The business you work with is not currently active.');
+    e.status = 403; throw e;
+  }
+
+  const token = signToken({
+    sub: `partner:${partner.id}`,
+    role: 'partner',
+    mid: hit.merchant.id,
+    pid: partner.id,
+    exp: Date.now() + cfg.REMEMBER_TTL_MS,
+  });
+  res.json({ token, partner: partners.publicPartner(partner), businessName: hit.merchant.businessName });
+}));
+
+/* Everything the partner page needs in one call: who they are, the money, and
+   the requests they have already made. */
+router.get('/partner/me', partnerContext, ah(async (req, res) => {
+  const [charges, payouts] = await Promise.all([
+    store.charges.forMerchant(req.pmerchant.id),
+    store.partnerPayouts.forMerchant(req.pmerchant.id),
+  ]);
+  res.json({
+    partner: partners.publicPartner(req.partner),
+    businessName: req.pmerchant.businessName,
+    balance: partners.balanceFor(req.partner, charges, payouts),
+    withdrawals: payouts
+      .filter((p) => p.partnerId === req.partner.id)
+      .map(({ pinHash, ...p }) => p),
+  });
+}));
+
+router.post('/partner/withdraw', writeLimiter, partnerContext, ah(async (req, res) => {
+  const { amount, method, bank, accountNumber, accountName, mobileProvider, mobileNumber, note } = req.body || {};
+
+  /* Validate before rounding: Math.round(Infinity) is Infinity, which passes a
+     bare `<= 0` test and is then serialised to null. */
+  const rawAmt = Number(amount);
+  if (!Number.isFinite(rawAmt) || rawAmt <= 0) {
+    const e = new Error('Enter a valid amount.'); e.status = 400; throw e;
+  }
+  const amt = Math.round(rawAmt);
+
+  const payoutMethod = method === 'mobile_money' ? 'mobile_money' : 'bank';
+  if (payoutMethod === 'bank' && (!String(accountNumber || '').trim() || !String(accountName || '').trim())) {
+    const e = new Error('Account number and account name are required.'); e.status = 400; throw e;
+  }
+  if (payoutMethod === 'mobile_money' && !String(mobileNumber || '').trim()) {
+    const e = new Error('Mobile money number is required.'); e.status = 400; throw e;
+  }
+
+  const [charges, payouts] = await Promise.all([
+    store.charges.forMerchant(req.pmerchant.id),
+    store.partnerPayouts.forMerchant(req.pmerchant.id),
+  ]);
+  const available = partners.balanceFor(req.partner, charges, payouts).available;
+
+  /* The one rule: a partner can withdraw what they have earned and no more.
+     Without it the figure in the request is believed on faith, and this
+     endpoint writes a record of money the platform still owes someone else. */
+  if (amt > available) {
+    const e = new Error(`You have GHS ${(available / 100).toFixed(2)} available to withdraw.`);
+    e.status = 400; throw e;
+  }
+
+  const payout = await store.partnerPayouts.insert({
+    id: genId('ppyt_'),
+    merchantId: req.pmerchant.id,
+    partnerId: req.partner.id,
+    partnerName: req.partner.name,
+    partnerCode: req.partner.code,
+    amount: amt,
+    currency: 'GHS',
+    method: payoutMethod,
+    bank: String(bank || '').trim(),
+    accountNumber: String(accountNumber || '').trim(),
+    accountName: String(accountName || '').trim(),
+    mobileProvider: String(mobileProvider || '').trim(),
+    mobileNumber: String(mobileNumber || '').trim(),
+    note: String(note || '').trim(),
+    status: 'pending',
+    createdAt: Date.now(),
+  });
+
+  /* Same reasoning as a merchant payout: the request is already recorded, so a
+     mail failure must not fail the response the partner is waiting on. */
+  const toList = await adminEmails();
+  if (toList.length) {
+    const destination = payout.method === 'mobile_money'
+      ? [payout.mobileProvider, payout.mobileNumber].filter(Boolean).join(' · ')
+      : [payout.bank, payout.accountNumber, payout.accountName && `(${payout.accountName})`].filter(Boolean).join(' · ');
+    sendPartnerPayoutAlert(toList, {
+      payoutId: payout.id,
+      amount: payout.amount,
+      partnerName: payout.partnerName,
+      businessName: req.pmerchant.businessName,
+      method: payout.method,
+      destination,
+      note: payout.note,
+    }).catch(err => console.warn('[partner-payout-alert]', err.message));
+  }
+
+  res.status(201).json({ payout });
+}));
+
+/* ── admin: partner access ──
+   The PIN is set here, not chosen by the partner, so an admin can lock someone
+   out and hand them a new one. It is returned once, in the response, and never
+   again — only the hash is stored. */
+router.put('/admin/members/:merchantId/partners/:partnerId/pin', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const merchant = await store.merchants.byId(req.params.merchantId);
+  if (!merchant) { const e = new Error('Merchant not found.'); e.status = 404; throw e; }
+  const partner = partners.byId(merchant, req.params.partnerId);
+  if (!partner) { const e = new Error('Partner not found.'); e.status = 404; throw e; }
+
+  partners.setPin(partner, req.body && req.body.pin);
+  merchant.partners = partners.list(merchant).map((x) => (x.id === partner.id ? partner : x));
+  await store.merchants.update(merchant);
+
+  /* Echoed once, in clear, so the admin can pass it to the partner. Anything
+     that stored it for later would be the same mistake as storing the hash
+     next to a password you can read. */
+  res.json({ ok: true, partnerId: partner.id, pin: String(req.body.pin).trim(), report: await partnerReport(merchant) });
+}));
+
+router.get('/admin/partner-payouts', requireAdminAuth, ah(async (req, res) => {
+  const all = await store.merchants.all();
+  const merchantMap = {};
+  all.forEach((m) => { merchantMap[m.id] = m.businessName; });
+  const payouts = (await store.partnerPayouts.all())
+    .map((p) => ({ ...p, merchantName: merchantMap[p.merchantId] || 'Unknown' }));
+  res.json({ payouts });
+}));
+
+router.post('/admin/partner-payouts/:id/complete', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const payout = await store.partnerPayouts.byId(req.params.id);
+  if (!payout) { const e = new Error('Withdrawal not found.'); e.status = 404; throw e; }
+  if (payout.status === 'completed') { const e = new Error('Already marked as paid.'); e.status = 409; throw e; }
+  payout.status = 'completed'; payout.completedAt = Date.now();
+  await store.partnerPayouts.update(payout);
+  res.json({ payout });
 }));
 
 /* Sets one merchant's fee rate, or clears it back to the platform default.

@@ -112,6 +112,7 @@ app.get('/register',   (_, res) => sendPage(res, 'register.html'));
 app.get('/docs',       (_, res) => sendPage(res, 'docs.html'));
 app.get('/admin',      (_, res) => sendPage(res, 'admin.html'));
 app.get('/admin-login',(_, res) => sendPage(res, 'admin-login.html'));
+app.get('/partner',    (_, res) => sendPage(res, 'partner.html'));
 
 app.use('/api', (_, res) => res.status(404).json({ error: 'not_found', message: 'Unknown endpoint.' }));
 

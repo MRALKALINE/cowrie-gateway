@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KassifyPay — Partner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --plum:#0C6E77; --plum-deep:#07474F; --plum-light:#17A2B0;
+  --gold:#C8901A; --mint:#1A9B6E; --coral:#EF6A4C;
+  --dark:#050E12;
+  --line:rgba(255,255,255,.1); --line-2:rgba(255,255,255,.07);
+  --ink:#fff; --ink-soft:rgba(255,255,255,.7); --muted:rgba(255,255,255,.42); --faint:rgba(255,255,255,.22);
+  --display:'Plus Jakarta Sans',sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--dark);color:var(--ink);font-family:var(--display);
+  -webkit-font-smoothing:antialiased;position:relative;overflow-x:hidden;
+}
+body::before{content:'';position:fixed;top:-25%;left:-20%;width:65%;height:65%;background:radial-gradient(circle,rgba(12,110,119,.4),transparent 65%);filter:blur(70px);pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;bottom:-25%;right:-20%;width:60%;height:60%;background:radial-gradient(circle,rgba(200,134,10,.22),transparent 65%);filter:blur(60px);pointer-events:none;z-index:0}
+.bg-dots{position:fixed;inset:0;background-image:radial-gradient(rgba(255,255,255,.05) 1.2px,transparent 1.2px);background-size:28px 28px;pointer-events:none;z-index:0}
+
+.shell{width:26px;height:26px;border-radius:50% 50% 48% 48%/60% 60% 40% 40%;background:linear-gradient(135deg,var(--gold),var(--plum-light));position:relative;flex-shrink:0;box-shadow:inset 0 -2px 4px rgba(0,0,0,.25)}
+.shell::before{content:'';position:absolute;left:50%;top:18%;bottom:18%;width:2px;background:rgba(255,255,255,.65);transform:translateX(-50%);border-radius:2px}
+
+/* ─── Login ─── */
+.card{
+  position:relative;z-index:1;width:100%;max-width:420px;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:22px;
+  padding:40px 40px 36px;backdrop-filter:blur(20px);
+  box-shadow:0 32px 80px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08);
+}
+.card-top{display:flex;align-items:center;gap:10px;margin-bottom:32px}
+.brand-name{font-weight:800;font-size:19px;letter-spacing:-.02em}
+h1{font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-bottom:6px}
+.sub{color:rgba(255,255,255,.45);font-size:14px;margin-bottom:30px;line-height:1.55}
+
+.field{margin-bottom:18px}
+.field label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.38);margin-bottom:9px}
+.field input{
+  width:100%;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1);
+  border-radius:10px;padding:13px 16px;color:#fff;font-family:var(--display);font-size:15px;
+  outline:none;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none
+}
+.field input::placeholder{color:rgba(255,255,255,.22)}
+.field input:focus{border-color:rgba(63,199,212,.65);background:rgba(255,255,255,.08);box-shadow:0 0 0 3px rgba(12,110,119,.22)}
+.field input.bad{border-color:rgba(239,106,76,.65);background:rgba(239,106,76,.07)}
+.err{color:#F87171;font-size:12.5px;margin-top:5px;display:none;font-family:var(--mono)}
+.err.show{display:block}
+
+.btn{
+  width:100%;height:52px;background:var(--plum);border:none;border-radius:10px;
+  color:#fff;font-family:var(--display);font-weight:700;font-size:15px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;
+  transition:background .15s,transform .15s,box-shadow .15s;position:relative;margin-top:4px;
+}
+.btn:hover{background:var(--plum-deep);transform:translateY(-1px);box-shadow:0 10px 28px -8px rgba(12,110,119,.5)}
+.btn:active{transform:none;box-shadow:none}
+.btn:disabled{opacity:.45;pointer-events:none}
+.btn.loading{color:transparent;pointer-events:none}
+.btn .spin{position:absolute;width:18px;height:18px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+.btn.loading .spin{display:block}
+.btn.done{background:var(--mint);pointer-events:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.card-foot{margin-top:26px;text-align:center;font-size:14px;color:rgba(255,255,255,.3)}
+.card-foot a{color:rgba(200,134,10,.85);font-weight:700;text-decoration:none}
+.card-foot a:hover{color:#F5C464}
+.secure-badge{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:16px;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.25)}
+
+/* ─── Dashboard shell ─── */
+.wrap{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:28px 22px 60px}
+.topbar{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.topbar .who{margin-left:auto;text-align:right;line-height:1.3}
+.topbar .who .nm{font-weight:700;font-size:14px}
+.topbar .who .bs{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.btn.sm{width:auto;height:auto;padding:7px 13px;font-size:12.5px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--ink)}
+.btn.sm:hover{background:rgba(255,255,255,.1);transform:none;box-shadow:none}
+
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+.kpi{
+  border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:18px 20px;
+  background:rgba(255,255,255,.05);box-shadow:0 4px 20px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);
+}
+.kpi .kl{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+.kpi .kv{font-family:var(--display);font-weight:900;font-size:27px;letter-spacing:-.02em;line-height:1.1;background:linear-gradient(135deg,#fff,rgba(255,255,255,.75));-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpi .ks{margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+/* Money the partner can take is the one figure that has to be the loudest
+   thing on the page, so it is the one tile that keeps its colour. */
+.kpi.acc .kv{background:none;-webkit-text-fill-color:#8FE3EC;color:#8FE3EC}
+
+.panel{border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;margin-bottom:16px;background:rgba(255,255,255,.04);box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,.04);border-bottom:1px solid var(--line-2)}
+.panel-head h2{font-family:var(--display);font-weight:800;font-size:14px}
+.badge{font-family:var(--mono);font-size:11px;color:var(--ink-soft);padding:4px 9px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;background:rgba(255,255,255,.04)}
+
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{padding:11px 14px;border-bottom:1px solid var(--line-2);font-size:13.5px;vertical-align:middle;text-align:left}
+.table th{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:rgba(255,255,255,.03);white-space:nowrap}
+.table tr:last-child td{border-bottom:none}
+.tag{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);font-family:var(--mono);font-size:10.5px;white-space:nowrap;font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.tag.ok{border-color:rgba(31,168,119,.4);background:rgba(31,168,119,.12);color:#4DD9A5}.tag.ok .dot{background:var(--mint)}
+.tag.pend{border-color:rgba(224,161,46,.4);background:rgba(224,161,46,.12);color:var(--gold)}.tag.pend .dot{background:var(--gold)}
+.tag.fail{border-color:rgba(239,106,76,.4);background:rgba(239,106,76,.12);color:#F4956B}.tag.fail .dot{background:var(--coral)}
+
+.field .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.field select{width:100%;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;outline:none;font-size:13.5px;background:rgba(255,255,255,.06);transition:.15s;color:var(--ink)}
+.field select option{background:#0A1D24;color:var(--ink)}
+.formrow{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.method-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.method-tab{border:1px solid var(--line);background:rgba(255,255,255,.05);border-radius:10px;padding:11px;font-weight:700;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s;cursor:pointer}
+.method-tab:hover{border-color:rgba(12,110,119,.35);color:var(--ink)}
+.method-tab.on{border-color:rgba(12,110,119,.5);background:rgba(12,110,119,.18);color:#8FE3EC}
+
+.fb{font-size:13px;margin-top:10px;display:none}
+.fb.ok{color:var(--mint);display:block}
+.fb.bad{color:var(--coral);display:block}
+.empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:13.5px}
+.empty strong{display:block;color:var(--ink);font-size:15px;margin-bottom:6px}
+.state-box{padding:48px 20px;text-align:center}
+.spin{width:36px;height:36px;border:3px solid rgba(12,110,119,.3);border-top-color:var(--plum-light);border-radius:50%;margin:0 auto 12px;animation:spin .75s linear infinite}
+
+/* ─── Withdraw modal ─── */
+.modal-backdrop{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,8,10,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.modal-backdrop.open{display:flex}
+.modal{width:100%;max-width:440px;background:#08191F;border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 30px 70px rgba(0,0,0,.6)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line-2)}
+.modal-head .ttl{font-weight:800;font-size:15px}
+.modal-head button{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:0 4px}
+.modal-head button:hover{color:#fff}
+.modal-body{padding:20px}
+.modal-actions{display:flex;gap:10px;padding:0 20px 20px}
+.modal-actions .btn{margin-top:0}
+
+/* ─── Withdrawal processing + success ───
+   Two states inside the same modal. `processing` shows a spinner and refuses to
+   be dismissed, because a withdrawal that looks stuck invites the partner to
+   submit it again and withdraw twice. */
+.wd-stage{display:none}
+.wd-stage.on{display:block}
+.wd-processing{text-align:center;padding:14px 0 6px}
+.wd-processing .ring{width:60px;height:60px;margin:0 auto 18px;border:4px solid rgba(12,110,119,.22);border-top-color:var(--plum-light);border-radius:50%;animation:spin .8s linear infinite}
+.wd-processing h3{font-size:17px;font-weight:800;margin-bottom:6px}
+.wd-processing p{font-size:13px;color:var(--muted);line-height:1.6}
+
+.wd-success{text-align:center;padding:6px 0 2px}
+.success-ic{width:64px;height:64px;border-radius:50%;background:rgba(26,155,110,.15);border:2px solid rgba(26,155,110,.35);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;animation:pop .45s cubic-bezier(.2,.9,.3,1.3)}
+@keyframes pop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+.wd-success h3{font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-.01em}
+.wd-amount{font-family:var(--display);font-weight:900;font-size:34px;letter-spacing:-.03em;color:var(--mint);margin:14px 0 4px;line-height:1.1}
+.wd-success .sub{color:var(--muted);font-size:13px;margin-bottom:0;line-height:1.65}
+.wd-receipt{margin:20px 0 0;background:rgba(255,255,255,.04);border:1px solid var(--line-2);border-radius:12px;padding:14px 16px;text-align:left}
+.wd-receipt .r{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:12.5px}
+.wd-receipt .r span:first-child{color:var(--muted)}
+.wd-receipt .r span:last-child{font-family:var(--mono);font-size:12px;text-align:right;word-break:break-all}
+
+@media(max-width:700px){.kpis{grid-template-columns:1fr}.wrap{padding:18px 13px 50px}}
+@media(max-width:480px){input{font-size:16px!important}.card{padding:32px 24px 28px}.formrow{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bg-dots"></div>
+
+<!-- ── View: sign in ── -->
+<div class="card" id="loginView" style="margin:40px auto;max-width:420px">
+  <div class="card-top">
+    <span class="shell"></span>
+    <span class="brand-name">KassifyPay</span>
+  </div>
+  <h1>Partner sign in.</h1>
+  <p class="sub">Use the code you share with customers, plus the PIN you were given.</p>
+  <form id="loginForm" novalidate>
+    <div class="field">
+      <label for="code">Your code</label>
+      <input type="text" id="code" placeholder="e.g. kwame-mensah" autocomplete="username" autocapitalize="none" spellcheck="false">
+      <div class="err" id="codeErr">Enter your code</div>
+    </div>
+    <div class="field">
+      <label for="pin">Your PIN</label>
+      <input type="password" id="pin" placeholder="••••" autocomplete="current-password" inputmode="numeric">
+      <div class="err" id="pinErr">Enter your PIN</div>
+    </div>
+    <div class="err" id="loginErr" style="margin-bottom:12px"></div>
+    <button type="submit" class="btn" id="signinBtn">
+      <span class="lbl">Sign in</span><span class="spin"></span>
+    </button>
+  </form>
+  <div class="card-foot">Lost your PIN? <a href="/">Ask the business you work with</a></div>
+  <div class="secure-badge">
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+    Protected by bank-grade encryption
+  </div>
+</div>
+
+<!-- ── View: dashboard ── -->
+<div class="wrap" id="dashView" style="display:none">
+  <div class="topbar">
+    <span class="shell"></span>
+    <span class="brand-name">KassifyPay</span>
+    <div class="who">
+      <div class="nm" id="whoName">—</div>
+      <div class="bs" id="whoBiz">—</div>
+    </div>
+    <button class="btn sm" id="signoutBtn" style="margin-left:14px">Sign out</button>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi acc">
+      <div class="kl">Available to withdraw</div>
+      <div class="kv" id="kAvailable">—</div>
+      <div class="ks" id="kAvailSub">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kl">Total earned</div>
+      <div class="kv" id="kEarned">—</div>
+      <div class="ks" id="kEarnedSub">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kl">Your rate</div>
+      <div class="kv" id="kRate">—</div>
+      <div class="ks" id="kRateSub">—</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Withdraw</h2>
+      <span class="badge">Any amount, any time</span>
+    </div>
+    <div style="padding:20px">
+      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">
+        Take out any part of what you have earned, as often as you like. There is no minimum and no waiting period.
+      </p>
+      <button class="btn primary" id="openWithdraw" style="width:100%;padding:12px;border-radius:12px;background:var(--plum);border:1px solid rgba(12,110,119,.5)">Withdraw funds</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Your withdrawals</h2><span class="badge" id="wdCount">0</span></div>
+    <div id="wdList"></div>
+  </div>
+</div>
+
+<!-- ── Withdraw modal ── -->
+<div class="modal-backdrop" id="wdModal">
+  <div class="modal">
+    <!-- stage 1: the form -->
+    <div class="wd-stage on" id="wdFormStage">
+      <div class="modal-head"><span class="ttl">Withdraw funds</span><button id="wdClose" aria-label="Close">&times;</button></div>
+      <div class="modal-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px">
+          <span style="font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)">Available</span>
+          <span style="font-family:var(--display);font-weight:900;font-size:20px;color:#8FE3EC" id="wdAvail">—</span>
+        </div>
+        <div class="method-tabs">
+          <button class="method-tab on" id="tabBank" type="button">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg>
+            Bank
+          </button>
+          <button class="method-tab" id="tabMomo" type="button">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
+            Mobile money
+          </button>
+        </div>
+        <input type="hidden" id="wdMethod" value="bank">
+
+        <div id="wdBankFields">
+          <div class="formrow">
+            <div class="field"><div class="lbl">Bank name</div><input id="wdBank" placeholder="e.g. GCB Bank"></div>
+            <div class="field"><div class="lbl">Account number</div><input id="wdAccNum" placeholder="e.g. 1234567890"></div>
+          </div>
+          <div class="field"><div class="lbl">Account name</div><input id="wdAccName" placeholder="Name on the account"></div>
+        </div>
+
+        <div id="wdMomoFields" style="display:none">
+          <div class="formrow">
+            <div class="field"><div class="lbl">Provider</div>
+              <select id="wdProvider">
+                <option value="MTN">MTN Mobile Money</option>
+                <option value="Vodafone">Vodafone Cash</option>
+                <option value="AirtelTigo">AirtelTigo Money</option>
+              </select>
+            </div>
+            <div class="field"><div class="lbl">Mobile money number</div><input id="wdPhone" placeholder="024 123 4567"></div>
+          </div>
+        </div>
+
+        <div class="field"><div class="lbl">Amount (GHS)</div><input id="wdAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:-4px">
+          <button type="button" id="wdUseMax" style="background:none;border:none;color:var(--gold);font-family:var(--mono);font-size:11.5px;font-weight:700;cursor:pointer;padding:0">Withdraw everything</button>
+        </div>
+        <div class="fb" id="wdFb"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn sm" id="wdCancel" style="flex:1">Cancel</button>
+        <button class="btn" id="wdSubmit" style="flex:2"><span class="lbl">Confirm withdrawal</span><span class="spin"></span></button>
+      </div>
+    </div>
+
+    <!-- stage 2: processing. No close button on purpose — see the CSS note. -->
+    <div class="wd-stage" id="wdProcessStage">
+      <div class="modal-body">
+        <div class="wd-processing">
+          <div class="ring"></div>
+          <h3>Sending your request…</h3>
+          <p>Hang on while we record it.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- stage 3: success -->
+    <div class="wd-stage" id="wdDoneStage">
+      <div class="modal-body">
+        <div class="wd-success">
+          <div class="success-ic">
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#1A9B6E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </div>
+          <h3>Withdrawal successful</h3>
+          <div class="wd-amount" id="doneAmount">—</div>
+          <p class="sub" id="doneLine">Your request has been received and will be sent to you.</p>
+          <div class="wd-receipt" id="doneReceipt"></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="wdFinish" style="width:100%">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const TOKEN_KEY='cowrie_partner_token';
+let TOKEN=sessionStorage.getItem(TOKEN_KEY)||'';
+let ME=null;
+
+/* ── helpers ── */
+const $=id=>document.getElementById(id);
+
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmt(minor){
+  return 'GHS '+(Number(minor||0)/100).toLocaleString('en-GH',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtDate(ms){
+  return new Date(Number(ms)||0).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+}
+function statusTag(s){
+  const ok=s==='completed';
+  const fail=s==='failed'||s==='rejected';
+  return `<span class="tag ${ok?'ok':fail?'fail':'pend'}"><span class="dot"></span>${ok?'Paid':fail?'Declined':'Processing'}</span>`;
+}
+
+/* Partner errors are addressed to a person reading a phone screen, so a failed
+   sign-in sends them to sign in again rather than to a page that cannot do
+   anything useful. */
+async function api(path,opts){
+  opts=opts||{};
+  const res=await fetch(path,{
+    method:opts.method||'GET',
+    headers:Object.assign({'content-type':'application/json'},TOKEN?{authorization:'Bearer '+TOKEN}:{}),
+    body:opts.body?JSON.stringify(opts.body):undefined,
+  });
+  let data={};
+  try{ data=await res.json(); }catch{ /* an empty body is not worth reporting */ }
+  if(!res.ok){
+    if(res.status===401&&TOKEN){ TOKEN=''; sessionStorage.removeItem(TOKEN_KEY); showLogin(); }
+    throw new Error(data.message||'Something went wrong. Please try again.');
+  }
+  return data;
+}
+
+/* ── views ── */
+function showLogin(){
+  ME=null;
+  $('dashView').style.display='none';
+  $('loginView').style.display='';
+  $('loginView').style.margin='40px auto';
+  $('code').focus();
+}
+function showDashboard(){
+  $('loginView').style.display='none';
+  $('dashView').style.display='';
+  window.scrollTo(0,0);
+}
+
+/* ── sign in ── */
+$('loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const loginErr=$('loginErr');
+  loginErr.classList.remove('show');
+  const code=$('code'),pin=$('pin');
+  code.classList.remove('bad'); pin.classList.remove('bad');
+  $('codeErr').classList.remove('show'); $('pinErr').classList.remove('show');
+
+  let ok=true;
+  if(!code.value.trim()){ code.classList.add('bad'); $('codeErr').classList.add('show'); ok=false; }
+  if(!pin.value){ pin.classList.add('bad'); $('pinErr').classList.add('show'); ok=false; }
+  if(!ok)return;
+
+  const btn=$('signinBtn');
+  btn.classList.add('loading');
+  try{
+    const data=await api('/api/partner/login',{method:'POST',body:{code:code.value.trim(),pin:pin.value}});
+    TOKEN=data.token;
+    sessionStorage.setItem(TOKEN_KEY,TOKEN);
+    pin.value='';
+    btn.classList.remove('loading'); btn.classList.add('done');
+    btn.querySelector('.lbl').textContent='Signed in ✓';
+    /* The checkmark holds for a beat before the dashboard replaces the card,
+       so a fast sign-in still reads as a confirmation rather than a flicker. */
+    setTimeout(()=>{
+      btn.classList.remove('done');
+      btn.querySelector('.lbl').textContent='Sign in';
+      load().catch(e=>{ $('loginErr').textContent=e.message; $('loginErr').classList.add('show'); showLogin(); });
+    },420);
+  }catch(err){
+    btn.classList.remove('loading');
+    loginErr.textContent=err.message; loginErr.classList.add('show');
+  }
+});
+
+$('signoutBtn').addEventListener('click',()=>{
+  TOKEN=''; sessionStorage.removeItem(TOKEN_KEY);
+  closeModal();
+  showLogin();
+});
+
+/* ── dashboard ── */
+async function load(){
+  if(!TOKEN){ showLogin(); return; }
+  try{
+    ME=await api('/api/partner/me');
+  }catch(e){
+    if(!TOKEN){ showLogin(); return; }
+    throw e;
+  }
+
+  const p=ME.partner, b=ME.balance;
+  $('whoName').textContent=p.name;
+  $('whoBiz').textContent=ME.businessName||'';
+  $('kAvailable').textContent=fmt(b.available);
+  $('kAvailSub').textContent=b.withdrawn?`${fmt(b.withdrawn)} already requested`:'All earned, none requested';
+  $('kEarned').textContent=fmt(b.earned);
+  $('kEarnedSub').textContent=`${b.deposits} deposit${b.deposits===1?'':'s'} · ${fmt(b.volume)} brought in`;
+  $('kRate').textContent=(Number(p.commissionBps)/100).toFixed(p.commissionBps%100?1:0)+'%';
+  $('kRateSub').textContent=p.active===false?'Account switched off':'of every deposit you bring';
+
+  const list=ME.withdrawals||[];
+  $('wdCount').textContent=list.length;
+  $('wdList').innerHTML = list.length ? `
+    <div style="overflow:auto"><table class="table">
+      <thead><tr><th>Date</th><th>Method</th><th>Destination</th><th>Amount</th><th>Status</th></tr></thead>
+      <tbody>${list.map(x=>{
+        const dest=x.method==='mobile_money'
+          ? `${esc(x.mobileProvider||'')} · <span style="font-family:var(--mono)">${esc(x.mobileNumber||'')}</span>`
+          : `${esc(x.bank||'—')} · <span style="font-family:var(--mono)">${esc(x.accountNumber||'')}</span> <span style="color:var(--muted)">(${esc(x.accountName||'')})</span>`;
+        return `<tr>
+          <td style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${fmtDate(x.createdAt)}</td>
+          <td>${x.method==='mobile_money'?'Mobile money':'Bank'}</td>
+          <td style="font-size:12.5px">${dest}</td>
+          <td style="font-family:var(--mono);font-weight:700;white-space:nowrap">${fmt(x.amount)}</td>
+          <td>${statusTag(x.status)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>` : `<div class="empty"><strong>No withdrawals yet</strong>When you request one it will appear here.</div>`;
+
+  showDashboard();
+}
+
+/* ── withdraw modal ── */
+const modal=$('wdModal');
+function stage(name){
+  ['wdFormStage','wdProcessStage','wdDoneStage'].forEach(id=>$(id).classList.toggle('on',id===name));
+}
+function openModal(){
+  if(!ME)return;
+  if(!ME.balance.available){
+    alert('You have nothing available to withdraw yet.');
+    return;
+  }
+  $('wdFb').className='fb';
+  $('wdAvail').textContent=fmt(ME.balance.available);
+  $('wdAmount').value='';
+  stage('wdFormStage');
+  modal.classList.add('open');
+}
+/* Refused during processing on purpose — see the note on the processing stage. */
+function closeModal(){
+  if($('wdProcessStage').classList.contains('on'))return;
+  modal.classList.remove('open');
+}
+$('openWithdraw').addEventListener('click',openModal);
+$('wdClose').addEventListener('click',closeModal);
+$('wdCancel').addEventListener('click',closeModal);
+$('wdFinish').addEventListener('click',()=>{ modal.classList.remove('open'); });
+modal.addEventListener('click',e=>{ if(e.target===modal)closeModal(); });
+
+function setMethod(m){
+  $('wdMethod').value=m;
+  const isBank=m==='bank';
+  $('wdBankFields').style.display=isBank?'':'none';
+  $('wdMomoFields').style.display=isBank?'none':'';
+  $('tabBank').className='method-tab'+(isBank?' on':'');
+  $('tabMomo').className='method-tab'+(isBank?'':' on');
+}
+$('tabBank').addEventListener('click',()=>setMethod('bank'));
+$('tabMomo').addEventListener('click',()=>setMethod('mobile_money'));
+setMethod('bank');
+
+$('wdUseMax').addEventListener('click',()=>{
+  $('wdAmount').value=(ME.balance.available/100).toFixed(2);
+  $('wdAmount').focus();
+});
+
+$('wdSubmit').addEventListener('click',async()=>{
+  const fb=$('wdFb');
+  fb.className='fb';
+  const method=$('wdMethod').value;
+  const amount=parseFloat($('wdAmount').value);
+
+  if(!amount||amount<=0){ fb.textContent='Enter an amount to withdraw.'; fb.className='fb bad'; $('wdAmount').focus(); return; }
+  if(method==='bank' && (!$('wdAccNum').value.trim()||!$('wdAccName').value.trim())){
+    fb.textContent='Enter the account number and account name.'; fb.className='fb bad'; return;
+  }
+  if(method==='mobile_money' && !$('wdPhone').value.trim()){
+    fb.textContent='Enter your mobile money number.'; fb.className='fb bad'; return;
+  }
+
+  const btn=$('wdSubmit');
+  btn.classList.add('loading');
+
+  /* The spinner replaces the form only once the request is away. Showing it
+     earlier would mean a spinner for a request that never started, and a
+     validation failure would have to come back out of a screen with no form on
+     it to return to. */
+  setTimeout(()=>{ if(btn.classList.contains('loading'))stage('wdProcessStage'); },350);
+
+  try{
+    const {payout}=await api('/api/partner/withdraw',{
+      method:'POST',
+      body:{
+        method, amount:Math.round(amount*100),
+        bank:$('wdBank').value.trim(),
+        accountNumber:$('wdAccNum').value.trim(),
+        accountName:$('wdAccName').value.trim(),
+        mobileProvider:$('wdProvider').value,
+        mobileNumber:$('wdPhone').value.trim(),
+      },
+    });
+
+    const dest = payout.method==='mobile_money'
+      ? `${payout.mobileProvider} · ${payout.mobileNumber}`
+      : `${payout.bank||'—'} · ${payout.accountNumber} (${payout.accountName})`;
+
+    $('doneAmount').textContent=fmt(payout.amount);
+    $('doneReceipt').innerHTML=`
+      <div class="r"><span>Reference</span><span>${esc(payout.id)}</span></div>
+      <div class="r"><span>Method</span><span>${payout.method==='mobile_money'?'Mobile money':'Bank transfer'}</span></div>
+      <div class="r"><span>Destination</span><span>${esc(dest)}</span></div>
+      <div class="r"><span>Requested</span><span>${fmtDate(payout.createdAt)}</span></div>`;
+
+    stage('wdDoneStage');
+    ['wdBank','wdAccNum','wdAccName','wdPhone','wdAmount'].forEach(id=>{ const el=$(id); if(el)el.value=''; });
+    await load();
+  }catch(err){
+    stage('wdFormStage');
+    fb.textContent=err.message; fb.className='fb bad';
+  }finally{
+    btn.classList.remove('loading');
+  }
+});
+
+/* ── boot ── */
+load().catch(e=>{ $('loginErr').textContent=e.message; $('loginErr').classList.add('show'); showLogin(); });
+</script>
+</body>
+</html>
