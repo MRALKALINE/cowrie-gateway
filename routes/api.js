@@ -1734,6 +1734,27 @@ router.post('/charges/:reference/notify-transfer', payLimiter, loadCharge, ah(as
   res.json({ ok: true });
 }));
 
+/* The counterpart to mark-paid: the admin checked the bank and the transfer
+   never arrived. The charge fails with the admin's reason, which the payer's
+   checkout shows if it is still open, and the merchant gets charge.failed. */
+router.post('/admin/charges/:reference/reject', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const charge = await store.charges.byReference(req.params.reference);
+  if (!charge) throw Object.assign(new Error('Charge not found.'), { status: 404 });
+  if (charge.status === 'success') throw Object.assign(new Error('Charge is already paid — it cannot be rejected.'), { status: 409 });
+  if (charge.status === 'failed') throw Object.assign(new Error('Charge is already rejected or failed.'), { status: 409 });
+  const reason = String((req.body && req.body.reason) || '').trim().slice(0, 200) || 'Payment not received.';
+  charge.status = 'failed';
+  charge.failure = { message: reason, rejectedBy: req.adminEmail || 'admin' };
+  charge.rejectedAt = Date.now();
+  charge.updatedAt = Date.now();
+  /* Deliberate admin decision — same reasoning as mark-paid. */
+  await store.charges.forceUpdate(charge);
+  console.log(`[admin] ${req.adminEmail} rejected ${charge.reference}: ${reason}`);
+  const merchant = await store.merchants.byId(charge.merchantId);
+  if (merchant) webhooks.emit(merchant, 'charge.failed', charge).catch(() => {});
+  res.json({ charge });
+}));
+
 router.post('/admin/charges/:reference/mark-paid', writeLimiter, requireAdminAuth, ah(async (req, res) => {
   const charge = await store.charges.byReference(req.params.reference);
   if (!charge) throw Object.assign(new Error('Charge not found.'), { status: 404 });

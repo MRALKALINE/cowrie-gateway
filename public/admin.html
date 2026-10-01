@@ -1353,6 +1353,7 @@ async function renderConfirmations(el){
         <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">${timeAgo(t.createdAt)}</span>
         <div style="margin-left:auto;display:flex;gap:8px;flex-shrink:0">
           <button class="btn sm" data-ref="${esc(t.reference)}" style="font-size:12px">View details</button>
+          <button id="confRej_${i}" class="btn sm" style="color:var(--coral);border-color:rgba(239,106,76,.4)">Reject</button>
           <button id="confPay_${i}" class="btn primary sm">Mark as paid</button>
         </div>
       </div>
@@ -1445,6 +1446,23 @@ async function renderConfirmations(el){
           pending = pending.filter(p=>p.reference!==t.reference);
           setTimeout(()=>draw(), 1100);
         }catch(err){ self.disabled = false; self.textContent = 'Mark as paid'; alert(err.message); }
+      });
+      /* Transfer never arrived: fail the charge with a reason the payer sees. */
+      const rej = document.getElementById('confRej_'+i);
+      if(rej) rej.addEventListener('click', async function(){
+        const reason = prompt('Reason shown to the payer:', 'Payment not received.');
+        if(reason===null) return;
+        if(!confirm(`Reject ${fmt(t.amount||0, t.currency||'GHS')} (${t.reference})? This cannot be undone.`)) return;
+        const self = this;
+        self.disabled = true; self.textContent = 'Rejecting…';
+        try{
+          await API.post('/api/admin/charges/'+encodeURIComponent(t.reference)+'/reject', {reason});
+          const card = document.getElementById('confCard_'+i);
+          card.style.opacity = '0.45'; card.style.pointerEvents = 'none';
+          self.textContent = 'Rejected';
+          pending = pending.filter(p=>p.reference!==t.reference);
+          setTimeout(()=>draw(), 1100);
+        }catch(err){ self.disabled = false; self.textContent = 'Reject'; alert(err.message); }
       });
     });
   }
