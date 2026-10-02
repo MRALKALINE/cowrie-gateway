@@ -1734,6 +1734,20 @@ router.post('/charges/:reference/notify-transfer', payLimiter, loadCharge, ah(as
   res.json({ ok: true });
 }));
 
+/* What the app sees as the caller's address, and the proxy chain behind it.
+   Rate limits key on req.ip, so this is how to check TRUST_PROXY_HOPS is
+   right for the hosting in front of the app (a CDN adds a hop). Admin-only. */
+router.get('/admin/diagnostics/ip', requireAdminAuth, (req, res) => {
+  res.json({
+    ip: req.ip,
+    ips: req.ips,
+    xForwardedFor: req.headers['x-forwarded-for'] || null,
+    xRealIp: req.headers['x-real-ip'] || null,
+    socket: req.socket.remoteAddress,
+    trustProxy: req.app.get('trust proxy'),
+  });
+});
+
 /* The counterpart to mark-paid: the admin checked the bank and the transfer
    never arrived. The charge fails with the admin's reason, which the payer's
    checkout shows if it is still open, and the merchant gets charge.failed. */
