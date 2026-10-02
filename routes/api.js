@@ -1723,7 +1723,7 @@ router.post('/charges/:reference/notify-transfer', payLimiter, loadCharge, ah(as
     const merchant = await store.merchants.byId(charge.merchantId);
     sendPendingTransferAlert(toList, {
       reference: charge.reference,
-      amount: charge.amount,
+      amount: fees.payableAmount(charge),   // what the payer sent, fee included — the statement figure
       currency: charge.currency || 'GHS',
       merchantName: merchant ? merchant.businessName : 'Unknown',
       senderName: charge.bankAccount ? charge.payerName : null,

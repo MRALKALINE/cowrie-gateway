@@ -14,7 +14,11 @@ const nalopay = require('./lib/nalopay');
 const mcash = require('./lib/mcash');
 
 const app = express();
-app.set('trust proxy', true);
+/* Trust exactly the proxy hops in front of the app (one, on Render and on
+   Hostinger). `true` trusted the whole X-Forwarded-For chain, so req.ip was
+   whatever the client claimed: a fresh made-up address per request walked
+   straight past every rate limit, including the login brute-force cap. */
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
 
 /* Security headers on every response. */
 /* Each response gets a fresh nonce, stamped onto the inline <script> as the
@@ -48,8 +52,9 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Content-Security-Policy', cspFor(res.locals.nonce));
-  /* Render terminates TLS, so this is only meaningful in production. */
-  if (process.env.RENDER) {
+  /* The proxy terminates TLS, so this is only meaningful in production —
+     on Render or Hostinger alike, not just where RENDER is set. */
+  if (process.env.RENDER || process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   next();
