@@ -1166,15 +1166,42 @@ async function renderTransactions(el){
   txCache = transactions;
 
   const PAGE = 10;
+  /* Transactions are grouped by outcome — successful, failed, pending — each
+     in its own place; live/test narrows whichever group is open. */
+  const GROUPS = [
+    {id:'success', label:'Successful', color:'var(--mint)',  bg:'rgba(26,155,110,.12)', bd:'rgba(26,155,110,.35)'},
+    {id:'failed',  label:'Failed',     color:'var(--coral)', bg:'rgba(239,106,76,.10)', bd:'rgba(239,106,76,.35)'},
+    {id:'pending', label:'Pending',    color:'var(--gold)',  bg:'rgba(224,161,46,.10)', bd:'rgba(224,161,46,.35)'},
+    {id:'all',     label:'All',        color:'var(--ink-soft)', bg:'rgba(255,255,255,.04)', bd:'var(--line)'},
+  ];
+  const groupOf = t => t.status==='success' ? 'success' : t.status==='failed' ? 'failed' : 'pending';
+  let statusFilter = 'success';
   let modeFilter = 'all';
   let page = 0;
 
-  const pendingCount = transactions.filter(t=>!['success','failed'].includes(t.status)).length;
+  const inMode = t => modeFilter==='all' || (t.mode||'test')===modeFilter;
+  /* Totals are per currency: naira and cedis are never added together. */
+  function totals(rows){
+    const by = {};
+    rows.forEach(t=>{ const c=t.currency||'GHS'; by[c]=(by[c]||0)+(t.amount||0); });
+    const parts = Object.entries(by).map(([c,a])=>fmt(a,c));
+    return parts.length ? parts.join(' · ') : '—';
+  }
+  function renderGroups(){
+    const base = transactions.filter(inMode);
+    document.getElementById('txGroups').innerHTML = GROUPS.map(g=>{
+      const rows = g.id==='all' ? base : base.filter(t=>groupOf(t)===g.id);
+      const on = statusFilter===g.id;
+      return `<button data-grp="${g.id}" style="text-align:left;cursor:pointer;border-radius:14px;padding:14px 16px;background:${on?g.bg:'var(--card)'};border:1.5px solid ${on?g.bd:'var(--line)'};color:var(--ink);font:inherit">
+        <div style="font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:${g.color};font-weight:700">${g.label}</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px">${rows.length}</div>
+        <div style="font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:2px;word-break:break-word">${esc(totals(rows))}</div>
+      </button>`;
+    }).join('');
+  }
 
   function filtered(){
-    let rows = modeFilter==='pending'
-      ? transactions.filter(t=>!['success','failed'].includes(t.status))
-      : modeFilter==='all' ? transactions : transactions.filter(t=>(t.mode||'test')===modeFilter);
+    let rows = transactions.filter(t=>inMode(t) && (statusFilter==='all' || groupOf(t)===statusFilter));
     const q = (document.getElementById('txSearch')||{}).value;
     if(q&&q.trim()){
       const s=q.toLowerCase().trim();
@@ -1201,25 +1228,28 @@ async function renderTransactions(el){
       <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">Page ${page+1} of ${pages}</span>
       <button data-pg="next" class="btn sm" style="min-width:80px;min-height:36px" ${page>=pages-1?'disabled':''}>Next →</button>`;
 
-    ['all','pending','live','test'].forEach(m=>{
+    ['all','live','test'].forEach(m=>{
       const btn=document.getElementById('txTab_'+m);
       if(btn) btn.classList.toggle('active',modeFilter===m);
     });
+    renderGroups();
+    const g = GROUPS.find(x=>x.id===statusFilter);
+    document.getElementById('txTitle').textContent = statusFilter==='all' ? 'All transactions' : g.label+' transactions';
   }
 
   el.innerHTML = `
-    <div class="search-row" style="display:flex;gap:8px;align-items:center">
-      <input id="txSearch" type="text" placeholder="Search by name, reference, method or status…" style="flex:1">
+    <div id="txGroups" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px"></div>
+    <div class="search-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="txSearch" type="text" placeholder="Search by name, reference or method…" style="flex:1;min-width:180px">
       <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap">
-        <button id="txTab_all"     class="btn sm active" style="font-family:var(--mono);font-size:11px;min-height:36px;padding:6px 10px">All</button>
-        <button id="txTab_pending" class="btn sm" style="font-family:var(--mono);font-size:11px;min-height:36px;padding:6px 10px;background:rgba(224,161,46,.13);color:var(--gold);border:1px solid rgba(224,161,46,.3)">Pending${pendingCount>0?` <span style="background:rgba(224,161,46,.3);border-radius:8px;padding:1px 6px">${pendingCount}</span>`:''}</button>
-        <button id="txTab_live"    class="btn sm" style="font-family:var(--mono);font-size:11px;min-height:36px;padding:6px 10px;background:rgba(26,155,110,.15);color:var(--mint);border:1px solid rgba(26,155,110,.3)">Live</button>
-        <button id="txTab_test"    class="btn sm" style="font-family:var(--mono);font-size:11px;min-height:36px;padding:6px 10px;background:rgba(200,134,10,.1);color:var(--gold);border:1px solid rgba(200,134,10,.25)">Test</button>
+        <button id="txTab_all"  class="btn sm active" style="font-family:var(--mono);font-size:11px;min-height:36px;padding:6px 10px">Live + test</button>
+        <button id="txTab_live" class="btn sm" style="font-family:var(--mono);font-size:11px;min-height:36px;padding:6px 10px;background:rgba(26,155,110,.15);color:var(--mint);border:1px solid rgba(26,155,110,.3)">Live</button>
+        <button id="txTab_test" class="btn sm" style="font-family:var(--mono);font-size:11px;min-height:36px;padding:6px 10px;background:rgba(200,134,10,.1);color:var(--gold);border:1px solid rgba(200,134,10,.25)">Test</button>
       </div>
     </div>
     <div class="panel r3d">
       <div class="panel-head">
-        <h2>Transactions</h2>
+        <h2 id="txTitle">Transactions</h2>
         <span class="badge" id="txCount">…</span>
         <button id="clearTxBtn" class="btn sm" style="margin-left:auto;background:rgba(239,106,76,.12);color:var(--coral);border:1px solid rgba(239,106,76,.3);font-family:var(--mono);font-size:11px">Clear history</button>
       </div>
@@ -1258,8 +1288,13 @@ async function renderTransactions(el){
   });
 
   document.getElementById('txSearch').addEventListener('input',()=>{ page=0; renderPage(); });
-  ['all','pending','live','test'].forEach(m=>{
+  ['all','live','test'].forEach(m=>{
     document.getElementById('txTab_'+m).addEventListener('click',()=>{ modeFilter=m; page=0; renderPage(); });
+  });
+  document.getElementById('txGroups').addEventListener('click',e=>{
+    const b=e.target.closest('[data-grp]');
+    if(!b) return;
+    statusFilter=b.dataset.grp; page=0; renderPage();
   });
 
   const modal = document.getElementById('clearModal');
@@ -1281,6 +1316,7 @@ async function renderTransactions(el){
   if(_pendingSearch){
     document.getElementById('txSearch').value = _pendingSearch;
     _pendingSearch = '';
+    statusFilter = 'all';   // a search from elsewhere must not be hidden by the group
     page = 0;
     renderPage();
     document.getElementById('txSearch').focus();
