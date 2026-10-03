@@ -330,6 +330,7 @@ function formFor(m){
     <div class="hint">${info}A one-time virtual bank account will be generated. Transfer the exact amount to complete your payment.</div>
     ${payBtn('Get account number')}`;
   if(m==='transfer') return `
+    ${ngnCaution()}
     <div class="hint">${info}Transfer the exact amount to the account shown on the next screen. Use your payment reference as the narration.</div>
     ${payBtn('View account details')}`;
   if(m==='ussd'){
@@ -552,6 +553,18 @@ function renderBankDetails(b){
 
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
+/* The owner does not accept OPay transfers into the Nigerian accounts. Shown
+   wherever a naira payer is choosing or using the bank-transfer route, before
+   any money moves. */
+function ngnCaution(){
+  if(ccy()!=='NGN') return '';
+  return `<div role="alert" style="margin:12px 0;padding:12px 14px;border-radius:12px;background:rgba(239,106,76,.12);border:1.5px solid rgba(239,106,76,.55);color:var(--ink);font-size:13px;line-height:1.5">
+    <div style="font-weight:800;color:var(--coral);letter-spacing:.04em;margin-bottom:4px">CAUTION ⚠️ ⛔️ ‼️‼️</div>
+    I don't receive payment from <b>OPay</b>. Only pay from <b>Moniepoint</b>, <b>PalmPay</b> and some other banks.<br>
+    <b>Payment from OPay is at owner's risk.</b>
+  </div>`;
+}
+
 function renderStaticTransfer(b){
   const accs=S.staticAccounts||[];
   const ref=S.charge?S.charge.reference:'—';
@@ -563,6 +576,7 @@ function renderStaticTransfer(b){
       <div class="drow"><span class="k">AMOUNT</span><span class="v">${fmt(amount(),ccy())}</span></div>
     </div>`).join('');
   b.innerHTML=`<button class="back" id="back">← Back</button>
+    ${ngnCaution()}
     ${accsHtml}
     <div class="detail-box" style="margin-top:12px;background:rgba(12,110,119,.12);border-color:rgba(12,110,119,.3)">
       <div class="drow"><span class="k">REFERENCE</span><span class="v" style="font-family:var(--mono);font-size:12px">${esc(ref)} <button class="copy" data-c="${esc(ref)}">copy</button></span></div>
