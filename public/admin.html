@@ -562,6 +562,10 @@ input,select,textarea{font-family:inherit}
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 7h18M3 11h18M3 15h18M5 21V7M19 21V7M12 7V3l-4 4h8l-4-4"/></svg>
           Bank Accounts
         </a>
+        <a href="#" data-view="momo-numbers">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
+          Mobile Money
+        </a>
         <a href="#" data-view="new-payment">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
           New payment
@@ -768,6 +772,7 @@ const VIEWS = {
   'support':    {title:'Support',          desc:'Messages from merchants — unanswered threads first.'},
   'gateways':      {title:'Payment Gateways',  desc:'Configure API keys for your payment processing providers.'},
   'bank-accounts': {title:'Bank Accounts',    desc:'Add your Nigerian bank accounts so customers can pay by direct bank transfer.'},
+  'momo-numbers':  {title:'Mobile Money',     desc:'Add your MTN, Telecel and AirtelTigo numbers so cedi customers can pay you by mobile money.'},
 };
 
 let currentView = 'overview';
@@ -799,6 +804,7 @@ async function loadView(view){
     else if(view==='kyc')          await renderKyc(el);
     else if(view==='gateways')     await renderGateways(el);
     else if(view==='bank-accounts') await renderBankAccounts(el);
+    else if(view==='momo-numbers')  await renderMomoNumbers(el);
     document.getElementById('statusBadge').textContent =
       'Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     reveal3d(el);
@@ -3003,6 +3009,99 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{
 });
 
 /* ========================= Bank Accounts ========================= */
+/* Ghana MoMo wallets cedi payers send to. Grouped by network; each number
+   can be switched off without deleting it. Changes are local until saved. */
+async function renderMomoNumbers(el){
+  const {numbers,networks}=await API.get('/api/admin/momo-numbers');
+  let list=[...numbers];
+  const NET_COLOR={MTN:'#FFCC00',Telecel:'#E60000',AirtelTigo:'#0055A5'};
+
+  function listHtml(){
+    if(!list.length) return '<p style="color:var(--muted);font-size:13px">No numbers added yet. Until you add one, cedi customers will not see the mobile money option.</p>';
+    return networks.map(net=>{
+      const rows=list.map((n,i)=>({n,i})).filter(x=>x.n.network===net);
+      if(!rows.length) return '';
+      return `<div style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:10px;height:10px;border-radius:50%;background:${NET_COLOR[net]}"></span>
+          <strong style="font-size:13px">${esc(net)}</strong>
+          <span style="font-size:12px;color:var(--muted)">${rows.filter(x=>x.n.active!==false).length} active</span>
+        </div>
+        ${rows.map(({n,i})=>`<div class="card" style="padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="flex:1;min-width:170px">
+            <div style="font-weight:700;font-size:14px">${esc(n.accountName)}</div>
+            <div style="font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:2px">${esc(n.number)}</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--muted)">
+            <input type="checkbox" data-act="${i}" ${n.active!==false?'checked':''} style="cursor:pointer"> Active
+          </label>
+          <button class="btn sm ghost" data-del="${i}">Delete</button>
+        </div>`).join('')}
+      </div>`;
+    }).join('');
+  }
+
+  el.innerHTML=`
+    <div class="card" style="padding:20px 22px;margin-bottom:18px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">Your mobile money numbers</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Customers paying in cedis pick their network and are shown one of your active numbers on it at random. They send the money, then give their sender name and MoMo transaction ID; confirm each one under <b>Confirmations</b>.</p>
+      <div id="momoList">${listHtml()}</div>
+    </div>
+    <div class="card" style="padding:20px 22px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">Add a number</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+        <div class="field"><label class="lbl">Network</label>
+          <select id="momoNet"><option value="">Select network</option>${networks.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label class="lbl">Mobile money number</label>
+          <input id="momoNum" placeholder="e.g. 0241234567" maxlength="13" inputmode="numeric">
+        </div>
+        <div class="field"><label class="lbl">Name on the wallet</label>
+          <input id="momoName" placeholder="Name customers will see">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
+        <button class="btn primary sm" id="momoAdd">Add number</button>
+        <button class="btn primary sm" id="momoSave" style="margin-left:auto">Save all changes</button>
+        <span class="fb" id="momoFb" style="font-size:13px"></span>
+      </div>
+    </div>`;
+
+  const fb=document.getElementById('momoFb');
+  function rerender(){ document.getElementById('momoList').innerHTML=listHtml(); }
+  document.getElementById('momoList').addEventListener('change',e=>{
+    const i=e.target.dataset.act; if(i===undefined) return;
+    list[i].active=e.target.checked; rerender(); fb.textContent='Unsaved changes';fb.className='fb';
+  });
+  document.getElementById('momoList').addEventListener('click',e=>{
+    const i=e.target.dataset.del; if(i===undefined) return;
+    if(!confirm(`Delete ${list[i].network} ${list[i].number}?`)) return;
+    list.splice(Number(i),1); rerender(); fb.textContent='Unsaved changes';fb.className='fb';
+  });
+  document.getElementById('momoAdd').addEventListener('click',()=>{
+    const network=document.getElementById('momoNet').value;
+    const number=document.getElementById('momoNum').value.replace(/\D/g,'');
+    const accountName=document.getElementById('momoName').value.trim();
+    if(!network||!number||!accountName){fb.textContent='Please fill in all fields.';fb.className='fb bad';return;}
+    if(!/^0\d{9}$/.test(number)){fb.textContent='Enter a 10-digit Ghana number, e.g. 0241234567.';fb.className='fb bad';return;}
+    if(list.some(n=>n.number===number)){fb.textContent='That number is already in the list.';fb.className='fb bad';return;}
+    if(list.length>=10){fb.textContent='Maximum 10 numbers.';fb.className='fb bad';return;}
+    list.push({network,number,accountName,active:true});
+    ['momoNet','momoNum','momoName'].forEach(id=>document.getElementById(id).value='');
+    rerender(); fb.textContent='Added — click Save all changes';fb.className='fb';
+  });
+  document.getElementById('momoSave').addEventListener('click',async()=>{
+    const btn=document.getElementById('momoSave');
+    btn.disabled=true;btn.textContent='Saving…';
+    try{
+      const r=await API.put('/api/admin/momo-numbers',{numbers:list});
+      list=[...r.numbers]; rerender();
+      fb.textContent='Saved!';fb.className='fb ok';btn.textContent='Saved ✓';
+      setTimeout(()=>{btn.disabled=false;btn.textContent='Save all changes';},2000);
+    }catch(err){fb.textContent=err.message;fb.className='fb bad';btn.disabled=false;btn.textContent='Save all changes';}
+  });
+}
+
 async function renderBankAccounts(el){
   const {accounts,banks}=await API.get('/api/admin/bank-accounts');
   let accs=[...accounts];

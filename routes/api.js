@@ -1663,6 +1663,73 @@ router.put('/admin/bank-accounts', writeLimiter, requireAdminAuth, ah(async (req
   res.json({ accounts: cleaned });
 }));
 
+/* ========================= Mobile money numbers (manual MoMo) ========================= */
+
+/* Ghana mobile money wallets the owner receives cedi payments into. Works
+   like the Nigerian bank accounts: the payer picks their network, is shown
+   one active number on it at random, sends the money, then gives the sender
+   name and MoMo transaction ID; an admin confirms against the wallet. */
+const MOMO_NETWORKS = ['MTN', 'Telecel', 'AirtelTigo'];
+const MAX_MOMO_NUMBERS = 10;
+
+router.get('/admin/momo-numbers', requireAdminAuth, ah(async (req, res) => {
+  const numbers = (await store.settings.get('momo_numbers')) || [];
+  res.json({ numbers, networks: MOMO_NETWORKS });
+}));
+
+router.put('/admin/momo-numbers', writeLimiter, requireAdminAuth, ah(async (req, res) => {
+  const { numbers } = req.body || {};
+  if (!Array.isArray(numbers)) throw Object.assign(new Error('numbers must be an array.'), { status: 400 });
+  if (numbers.length > MAX_MOMO_NUMBERS) {
+    throw Object.assign(new Error(`At most ${MAX_MOMO_NUMBERS} mobile money numbers.`), { status: 400 });
+  }
+  const cleaned = numbers.map((n) => {
+    const network = MOMO_NETWORKS.find((x) => x.toLowerCase() === String(n.network || '').trim().toLowerCase());
+    const number = String(n.number || '').replace(/\D/g, '');
+    const accountName = String(n.accountName || '').trim().slice(0, 100);
+    if (!network) throw Object.assign(new Error(`Network must be one of ${MOMO_NETWORKS.join(', ')}.`), { status: 400 });
+    if (!/^0\d{9}$/.test(number)) throw Object.assign(new Error(`${number || 'A number'} is not a valid 10-digit Ghana number (e.g. 0241234567).`), { status: 400 });
+    if (!accountName) throw Object.assign(new Error('Each number needs the name registered on the wallet.'), { status: 400 });
+    return { id: n.id || genId('momo_'), network, number, accountName, active: n.active !== false };
+  });
+  await store.settings.set('momo_numbers', cleaned);
+  res.json({ numbers: cleaned });
+}));
+
+/* Checkout: which networks have an active number, and — once the payer picks
+   one — the number assigned to this charge. The pick is saved on the charge
+   (as bankAccount, so the transfer confirmation, the admin Confirmations card
+   and the alert email all work unchanged). The payer can switch network
+   until they confirm sending; after that the assignment is fixed. */
+router.get('/charges/:reference/momo', payLimiter, loadCharge, ah(async (req, res) => {
+  let charge = req.charge;
+  const all = ((await store.settings.get('momo_numbers')) || []).filter((n) => n.active !== false);
+  const networks = MOMO_NETWORKS.filter((net) => all.some((n) => n.network === net));
+  const view = (c) => (c.bankAccount && c.bankAccount.kind === 'momo')
+    ? { network: c.bankAccount.network, number: c.bankAccount.accountNumber, accountName: c.bankAccount.accountName }
+    : null;
+  if ((charge.currency || 'GHS') !== 'GHS') return res.json({ networks: [], account: null });
+
+  const network = MOMO_NETWORKS.find((x) => x.toLowerCase() === String(req.query.network || '').toLowerCase());
+  if (!network) return res.json({ networks, account: view(charge) });
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const current = view(charge);
+    if (current && (current.network === network || charge.transferNotified)) return res.json({ networks, account: current });
+    if (charge.status !== 'pending') return res.json({ networks, account: current });
+    const pool = all.filter((n) => n.network === network);
+    if (!pool.length) throw Object.assign(new Error(`No ${network} number is available right now. Choose another network.`), { status: 404 });
+    const pick = pool[crypto.randomInt(pool.length)];
+    charge.bankAccount = {
+      id: pick.id, kind: 'momo', network,
+      bankName: `${network} Mobile Money`, accountNumber: pick.number, accountName: pick.accountName, currency: 'GHS',
+    };
+    if (await store.charges.update(charge)) return res.json({ networks, account: view(charge) });
+    charge = await store.charges.byReference(charge.reference);
+  }
+  throw Object.assign(new Error('Could not assign a number. Try again.'), { status: 409 });
+}));
+
 /* The payer sees ONE account, picked at random from the active ones for the
    charge's currency, so deposits spread across the accounts. The pick is saved
    on the charge: a reload shows the same account, and the admin checking the
@@ -1677,6 +1744,9 @@ router.get('/charges/:reference/bank-account', payLimiter, loadCharge, ah(async 
   let charge = req.charge;
   const currency = charge.currency || 'GHS';
   for (let attempt = 0; attempt < 3; attempt++) {
+    /* A mobile money number already given to this payer is not a bank
+       account, and must not be replaced by one on a page reload. */
+    if (charge.bankAccount && charge.bankAccount.kind === 'momo') return res.json({ account: null });
     if (charge.bankAccount) return res.json({ account: publicBankAccount(charge.bankAccount) });
     if (charge.status !== 'pending') return res.json({ account: null });
     const all = (await store.settings.get('bank_accounts')) || [];
