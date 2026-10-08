@@ -333,16 +333,12 @@ function formFor(m){
   if(m==='bank') return `
     <div class="hint">${info}A one-time virtual bank account will be generated. Transfer the exact amount to complete your payment.</div>
     ${payBtn('Get account number')}`;
-  if(m==='momosend'){
-    if(!S.momoNetworks.includes(S.momoNetwork)) S.momoNetwork=S.momoNetworks.length===1?S.momoNetworks[0]:'';
-    return `
-    <div class="field"><label>Your mobile money network</label></div>
-    <div class="seg" id="momoNet">${S.momoNetworks.map(n=>`<button data-n="${esc(n)}" class="${S.momoNetwork===n?'on':''}">${esc(n)}</button>`).join('')}</div>
-    <div class="err" id="momoNetErr">Choose your network</div>
-    <div class="hint">${info}You will get a ${esc(S.momoNetwork||'mobile money')} number to send ${fmt(amount(),ccy())} to, then confirm with your MoMo transaction ID.</div>
+  /* Same shape as the Nigerian bank transfer: the number is assigned on load,
+     this step only explains, the next screen shows it. */
+  if(m==='momosend') return `
+    <div class="hint">${info}Send the exact amount by mobile money to the number shown on the next screen. Use your payment reference as the reference / note.</div>
     <div class="err" id="momoErr" style="text-align:center"></div>
-    ${payBtn('Get MoMo number')}`;
-  }
+    ${payBtn('View mobile money details')}`;
   if(m==='transfer') return `
     ${ngnCaution()}
     <div class="hint">${info}Transfer the exact amount to the account shown on the next screen. Use your payment reference as the narration.</div>
@@ -396,17 +392,9 @@ function bindForm(){
   }else if(m==='bank'){
     $('#pay').addEventListener('click',()=>{if(!validateName()) return;submitPay($('#pay'),'bank',{});});
   }else if(m==='momosend'){
-    $('#momoNet').querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{
-      S.momoNetwork=btn.dataset.n; $('#momoNetErr').classList.remove('show'); render();
-    }));
-    $('#pay').addEventListener('click',async()=>{
-      if(!S.momoNetwork){$('#momoNetErr').classList.add('show');return;}
-      const btn=$('#pay'), err=$('#momoErr');
-      btn.classList.add('loading'); err.classList.remove('show');
-      try{
-        const {account}=await API.get('/api/charges/'+encodeURIComponent(S.charge.reference)+'/momo?network='+encodeURIComponent(S.momoNetwork));
-        S.momoAccount=account; go('momo_send');
-      }catch(e){ btn.classList.remove('loading'); err.textContent=e.message; err.classList.add('show'); }
+    $('#pay').addEventListener('click',()=>{
+      if(!S.momoAccount){ const err=$('#momoErr'); err.textContent='No mobile money number is available right now. Please try again shortly.'; err.classList.add('show'); return; }
+      go('momo_send');
     });
   }else if(m==='transfer'){
     $('#pay').addEventListener('click',()=>{if(!validateName()) return;go('static_transfer');});
@@ -667,8 +655,8 @@ function renderMomoSend(b){
       <div class="drow"><span class="k">REFERENCE</span><span class="v" style="font-family:var(--mono);font-size:12px">${esc(ref)} <button class="copy" data-c="${esc(ref)}">copy</button></span></div>
     </div>
     <div class="hint" style="justify-content:center;flex-direction:column;gap:5px;text-align:center;margin-top:12px">
-      <span>Send exactly <b>${fmt(amount(),ccy())}</b> by mobile money to the number above. Put the reference in the reference / note if your network asks for one.</span>
-      <span style="color:var(--faint)">Check the name shown before you confirm on your phone. Your order is confirmed once we receive the money.</span>
+      <span>Use the reference above as the payment reference / note.</span>
+      <span style="color:var(--faint)">Your order will be confirmed once we receive your payment.</span>
     </div>
     <div class="field" style="margin-top:16px"><label>Sender name</label>
       <input id="senderName" type="text" maxlength="100" autocomplete="name" placeholder="Name registered on your MoMo wallet" value="${esc(S.senderName||'')}">
@@ -930,11 +918,12 @@ async function boot(){
       const {account}=await API.get('/api/charges/'+encodeURIComponent(S.charge.reference)+'/bank-account');
       S.staticAccounts=account?[account]:[];
     }catch(e){ S.staticAccounts=[]; }
-    /* Cedi charges: which MoMo networks the owner has numbers on, and the
-       number already assigned if the payer is coming back to this page. */
+    /* Cedi charges: like the bank account above, the server assigns one
+       active MoMo number at random (any network) and returns the same one on
+       every load. */
     if(ccy()==='GHS'){
       try{
-        const {networks,account}=await API.get('/api/charges/'+encodeURIComponent(S.charge.reference)+'/momo');
+        const {networks,account}=await API.get('/api/charges/'+encodeURIComponent(S.charge.reference)+'/momo?network=any');
         S.momoNetworks=networks||[]; S.momoAccount=account||null;
         if(account) S.momoNetwork=account.network;
       }catch(e){ S.momoNetworks=[]; }

@@ -1710,19 +1710,25 @@ router.get('/charges/:reference/momo', payLimiter, loadCharge, ah(async (req, re
     : null;
   if ((charge.currency || 'GHS') !== 'GHS') return res.json({ networks: [], account: null });
 
-  const network = MOMO_NETWORKS.find((x) => x.toLowerCase() === String(req.query.network || '').toLowerCase());
-  if (!network) return res.json({ networks, account: view(charge) });
+  /* network=any is the checkout's default, matching the Nigerian bank flow:
+     one number at random across every active network, no choice asked. */
+  const any = String(req.query.network || '').toLowerCase() === 'any';
+  const network = any ? null : MOMO_NETWORKS.find((x) => x.toLowerCase() === String(req.query.network || '').toLowerCase());
+  if (!any && !network) return res.json({ networks, account: view(charge) });
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const current = view(charge);
-    if (current && (current.network === network || charge.transferNotified)) return res.json({ networks, account: current });
+    if (current && (any || current.network === network || charge.transferNotified)) return res.json({ networks, account: current });
     if (charge.status !== 'pending') return res.json({ networks, account: current });
-    const pool = all.filter((n) => n.network === network);
-    if (!pool.length) throw Object.assign(new Error(`No ${network} number is available right now. Choose another network.`), { status: 404 });
+    const pool = any ? all : all.filter((n) => n.network === network);
+    if (!pool.length) {
+      if (any) return res.json({ networks, account: null });
+      throw Object.assign(new Error(`No ${network} number is available right now. Choose another network.`), { status: 404 });
+    }
     const pick = pool[crypto.randomInt(pool.length)];
     charge.bankAccount = {
-      id: pick.id, kind: 'momo', network,
-      bankName: `${network} Mobile Money`, accountNumber: pick.number, accountName: pick.accountName, currency: 'GHS',
+      id: pick.id, kind: 'momo', network: pick.network,
+      bankName: `${pick.network} Mobile Money`, accountNumber: pick.number, accountName: pick.accountName, currency: 'GHS',
     };
     if (await store.charges.update(charge)) return res.json({ networks, account: view(charge) });
     charge = await store.charges.byReference(charge.reference);
