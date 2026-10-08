@@ -528,9 +528,13 @@ input,select,textarea{font-family:inherit}
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
           Transactions
         </a>
-        <a href="#" data-view="confirmations">
+        <a href="#" data-view="confirmations-gh">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          Confirmations
+          🇬🇭 Ghana Confirmations
+        </a>
+        <a href="#" data-view="confirmations-ng">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          🇳🇬 Nigeria Confirmations
         </a>
         <a href="#" data-view="payouts">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg>
@@ -763,7 +767,9 @@ const API = {
 const VIEWS = {
   overview:     {title:'Overview',     desc:'Real-time balances, settlements, payouts and reconciliation.'},
   transactions:  {title:'Transactions',  desc:'All payment collections across your payment rails.'},
-  confirmations: {title:'Confirmations', desc:'Bank transfers the customer has confirmed — verify receipt and mark as paid.'},
+  confirmations: {title:'Confirmations', desc:'Choose a country to confirm its payments.'},
+  'confirmations-gh': {title:'🇬🇭 Ghana Confirmations',   desc:'Mobile money payments the customer says they sent — check your wallets, then mark as paid or reject.'},
+  'confirmations-ng': {title:'🇳🇬 Nigeria Confirmations', desc:'Bank transfers the customer says they sent — check your Nigerian bank accounts, then mark as paid or reject.'},
   payouts:      {title:'Payouts',      desc:'Review and process payout requests submitted by merchants.'},
   settlements:  {title:'Settlements',  desc:'Reconcile and trigger settlements to your bank account.'},
   'new-payment':{title:'New payment',  desc:'Create a hosted payment link and share it with a customer.'},
@@ -795,7 +801,9 @@ async function loadView(view){
   try{
     if(view==='overview')          await renderOverview(el);
     else if(view==='transactions')   await renderTransactions(el);
-    else if(view==='confirmations')  await renderConfirmations(el);
+    else if(view==='confirmations')  await renderConfirmChooser(el);
+    else if(view==='confirmations-gh') await renderConfirmations(el,'GH');
+    else if(view==='confirmations-ng') await renderConfirmations(el,'NG');
     else if(view==='payouts')      await renderPayouts(el);
     else if(view==='settlements')  await renderSettlements(el);
     else if(view==='new-payment')  renderNewPayment(el);
@@ -1353,20 +1361,56 @@ function txTable(rows, viewable=false){
 }
 
 /* ========================= Confirmations ========================= */
-async function renderConfirmations(el){
+/* Each country's confirmations live on their own page: cedi payments are
+   checked against the Ghana MoMo wallets, naira against the Nigerian banks. */
+/* Function declarations, not consts: the page can open straight onto a
+   confirmations view before this part of the script has run. */
+function confirmCountries(){
+  return {
+    GH: {flag:'🇬🇭', name:'Ghana',   view:'confirmations-gh', where:'your mobile money wallets',  test:t=>(t.currency||'GHS')==='GHS'},
+    NG: {flag:'🇳🇬', name:'Nigeria', view:'confirmations-ng', where:'your Nigerian bank accounts', test:t=>t.currency==='NGN'},
+  };
+}
+/* Bank/MoMo transfers the customer confirmed sending, plus every open MCASH
+   pay-link charge — a pay-link payer who closes the tab without tapping
+   "I've paid" would otherwise be invisible. */
+function awaitingConfirmation(t){
+  return !['success','failed'].includes(t.status) && (t.transferNotified || t.mcashPaylink);
+}
+
+/* Landing for the mobile bottom bar's single "Confirm" button. */
+async function renderConfirmChooser(el){
+  const {transactions} = await API.get('/api/admin/transactions');
+  txCache = transactions;
+  const waiting = transactions.filter(awaitingConfirmation);
+  document.getElementById('statusBadge').textContent = waiting.length ? waiting.length+' pending' : 'All clear';
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+    ${Object.values(confirmCountries()).map(c=>{
+      const n = waiting.filter(c.test).length;
+      return `<button data-go="${c.view}" style="text-align:left;cursor:pointer;background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:22px;color:var(--ink);font:inherit">
+        <div style="font-size:30px">${c.flag}</div>
+        <div style="font-size:18px;font-weight:800;margin-top:6px">${c.name}</div>
+        <div style="font-size:13px;color:${n?'var(--gold)':'var(--muted)'};margin-top:4px;font-weight:600">${n?n+' waiting':'Nothing waiting'}</div>
+      </button>`;
+    }).join('')}
+  </div>`;
+  el.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('[data-view]').forEach(a=>a.classList.toggle('active',a.dataset.view===b.dataset.go));
+    loadView(b.dataset.go);
+  }));
+}
+
+async function renderConfirmations(el, countryKey){
+  const country = confirmCountries()[countryKey] || confirmCountries().NG;
   const [{transactions}, mcashRes] = await Promise.all([
     API.get('/api/admin/transactions'),
-    API.get('/api/admin/mcash-payments').catch(()=>({payments:[]})),
+    countryKey==='GH' ? API.get('/api/admin/mcash-payments').catch(()=>({payments:[]})) : Promise.resolve({payments:[]}),
   ]);
   txCache = transactions;
+  /* MCASH collects cedis, so its panel belongs on the Ghana page only. */
   const mcashPayments = (mcashRes.payments||[]).slice(0, 20);
 
-  /* Bank transfers the customer confirmed sending, plus every open MCASH
-     pay-link charge — a pay-link payer who closes the tab without tapping
-     "I've paid" would otherwise be invisible here. */
-  let pending = transactions.filter(t =>
-    !['success','failed'].includes(t.status) && (t.transferNotified || t.mcashPaylink)
-  );
+  let pending = transactions.filter(t => awaitingConfirmation(t) && country.test(t));
 
   function timeAgo(ts){
     const s = Math.floor((Date.now()-ts)/1000);
@@ -1455,7 +1499,7 @@ async function renderConfirmations(el){
       this.disabled = true; this.textContent = 'Saving…';
       try{
         await API.post('/api/admin/mcash-payments/'+encodeURIComponent(this.dataset.id)+'/apply', {reference});
-        renderConfirmations(el);
+        renderConfirmations(el, countryKey);
       }catch(err){ this.disabled = false; this.textContent = 'Confirm ✓'; alert(err.message); }
     }));
   }
@@ -1468,42 +1512,21 @@ async function renderConfirmations(el){
           <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#1A9B6E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
         <h3 style="font-size:17px;margin-bottom:8px">All caught up</h3>
-        <p style="color:var(--muted);font-size:14px">No payments waiting for confirmation right now.</p>
+        <p style="color:var(--muted);font-size:14px">No ${country.name} payments waiting for confirmation right now.</p>
       </div>`;
       bindIpnApply();
       return;
     }
-    /* Grouped by country: cedi payments (MoMo) are checked on the Ghana
-       wallets, naira payments on the Nigerian bank accounts. Cards keep their
-       index in `pending`, so the button wiring below is unchanged. */
-    const COUNTRIES = [
-      {key:'GH', flag:'🇬🇭', name:'Ghana',   where:'your mobile money wallets', test:t=>(t.currency||'GHS')==='GHS'},
-      {key:'NG', flag:'🇳🇬', name:'Nigeria', where:'your Nigerian bank accounts', test:t=>t.currency==='NGN'},
-    ];
-    const other = t => !COUNTRIES.some(c=>c.test(t));
-    const section = (title, rows, where) => {
-      const total = {};
-      rows.forEach(({t})=>{ const c=t.currency||'GHS'; total[c]=(total[c]||0)+expected(t); });
-      return `<div style="margin-bottom:22px">
-        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line-2)">
-          <h3 style="font-size:16px;font-weight:800;margin:0">${title}</h3>
-          <span class="badge">${rows.length} waiting</span>
-          ${rows.length?`<span style="font-family:var(--mono);font-size:12px;color:var(--muted)">expect ${esc(Object.entries(total).map(([c,a])=>fmt(a,c)).join(' · '))}</span>`:''}
-        </div>
-        ${rows.length
-          ? `${where?`<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Check ${where}, then mark each one as paid or reject it.</div>`:''}
-             <div style="display:flex;flex-direction:column;gap:10px">${rows.map(({t,i})=>confCard(t,i)).join('')}</div>`
-          : `<div style="font-size:13px;color:var(--muted);padding:6px 0">Nothing waiting.</div>`}
-      </div>`;
-    };
-    const indexed = pending.map((t,i)=>({t,i}));
-    const otherRows = indexed.filter(({t})=>other(t));
+    const total = {};
+    pending.forEach(t=>{ const c=t.currency||'GHS'; total[c]=(total[c]||0)+expected(t); });
     el.innerHTML = mcashPanel()+`
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-        <span style="font-size:13px;color:var(--muted);font-weight:600">${pending.length} payment${pending.length!==1?'s':''} waiting.</span>
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <span style="font-size:13px;color:var(--muted);font-weight:600">${country.flag} ${pending.length} payment${pending.length!==1?'s':''} waiting — check ${country.where}, then mark each one as paid or reject it.</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">expect ${esc(Object.entries(total).map(([c,a])=>fmt(a,c)).join(' · '))}</span>
       </div>
-      ${COUNTRIES.map(c=>section(`${c.flag} ${c.name}`, indexed.filter(({t})=>c.test(t)), c.where)).join('')}
-      ${otherRows.length?section('Other currencies', otherRows, ''):''}`;
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${pending.map((t,i)=>confCard(t,i)).join('')}
+      </div>`;
     bindIpnApply();
     pending.forEach((t, i)=>{
       const btn = document.getElementById('confPay_'+i);
