@@ -336,7 +336,6 @@ function formFor(m){
   /* Same shape as the Nigerian bank transfer: the number is assigned on load,
      this step only explains, the next screen shows it. */
   if(m==='momosend') return `
-    ${momoCaution()}
     <div class="hint">${info}Send the exact amount by mobile money to the number shown on the next screen. Use your payment reference as the reference / note.</div>
     <div class="err" id="momoErr" style="text-align:center"></div>
     ${payBtn('View mobile money details')}`;
@@ -582,21 +581,6 @@ function ngnCaution(){
   </div>`;
 }
 
-/* Owner's instructions for MTN payers sending to the MoMo numbers, shown on
-   both steps of the mobile money flow. Addressed to the payer's own network,
-   so it shows whichever number they were assigned. */
-function momoCaution(){
-  return `<div role="alert" style="margin:12px 0;padding:12px 14px;border-radius:12px;background:rgba(239,106,76,.12);border:1.5px solid rgba(239,106,76,.55);color:var(--ink);font-size:13px;line-height:1.5">
-    <div style="font-weight:800;color:var(--coral);letter-spacing:.04em;margin-bottom:4px">CAUTION ⚠️ ⛔️ ‼️‼️</div>
-    <b>For MTN users:</b><br>
-    Dial <b style="font-family:var(--mono)">*170#</b><br>
-    Select <b>1</b><br>
-    Select <b>5</b><br>
-    Select <b>2</b><br>
-    And continue from there.
-  </div>`;
-}
-
 function renderStaticTransfer(b){
   const accs=S.staticAccounts||[];
   const ref=S.charge?S.charge.reference:'—';
@@ -661,7 +645,6 @@ function renderMomoSend(b){
   const a=S.momoAccount||{};
   const ref=S.charge?S.charge.reference:'—';
   b.innerHTML=`<button class="back" id="back">← Back</button>
-    ${momoCaution()}
     <div class="detail-box">
       <div class="drow"><span class="k">NETWORK</span><span class="v">${esc(a.network||'—')} Mobile Money</span></div>
       <div class="drow"><span class="k">NUMBER</span><span class="v" style="font-family:var(--mono)">${esc(a.number||'—')} <button class="copy" data-c="${esc(a.number||'')}">copy</button></span></div>
