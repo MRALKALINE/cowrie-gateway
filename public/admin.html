@@ -1473,13 +1473,37 @@ async function renderConfirmations(el){
       bindIpnApply();
       return;
     }
-    el.innerHTML = mcashPanel()+`
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-        <span style="font-size:13px;color:var(--muted);font-weight:600">${pending.length} payment${pending.length!==1?'s':''} waiting — check your MCASH account or bank, then mark each one as paid.</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${pending.map((t,i)=>confCard(t,i)).join('')}
+    /* Grouped by country: cedi payments (MoMo) are checked on the Ghana
+       wallets, naira payments on the Nigerian bank accounts. Cards keep their
+       index in `pending`, so the button wiring below is unchanged. */
+    const COUNTRIES = [
+      {key:'GH', flag:'🇬🇭', name:'Ghana',   where:'your mobile money wallets', test:t=>(t.currency||'GHS')==='GHS'},
+      {key:'NG', flag:'🇳🇬', name:'Nigeria', where:'your Nigerian bank accounts', test:t=>t.currency==='NGN'},
+    ];
+    const other = t => !COUNTRIES.some(c=>c.test(t));
+    const section = (title, rows, where) => {
+      const total = {};
+      rows.forEach(({t})=>{ const c=t.currency||'GHS'; total[c]=(total[c]||0)+expected(t); });
+      return `<div style="margin-bottom:22px">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line-2)">
+          <h3 style="font-size:16px;font-weight:800;margin:0">${title}</h3>
+          <span class="badge">${rows.length} waiting</span>
+          ${rows.length?`<span style="font-family:var(--mono);font-size:12px;color:var(--muted)">expect ${esc(Object.entries(total).map(([c,a])=>fmt(a,c)).join(' · '))}</span>`:''}
+        </div>
+        ${rows.length
+          ? `${where?`<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Check ${where}, then mark each one as paid or reject it.</div>`:''}
+             <div style="display:flex;flex-direction:column;gap:10px">${rows.map(({t,i})=>confCard(t,i)).join('')}</div>`
+          : `<div style="font-size:13px;color:var(--muted);padding:6px 0">Nothing waiting.</div>`}
       </div>`;
+    };
+    const indexed = pending.map((t,i)=>({t,i}));
+    const otherRows = indexed.filter(({t})=>other(t));
+    el.innerHTML = mcashPanel()+`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <span style="font-size:13px;color:var(--muted);font-weight:600">${pending.length} payment${pending.length!==1?'s':''} waiting.</span>
+      </div>
+      ${COUNTRIES.map(c=>section(`${c.flag} ${c.name}`, indexed.filter(({t})=>c.test(t)), c.where)).join('')}
+      ${otherRows.length?section('Other currencies', otherRows, ''):''}`;
     bindIpnApply();
     pending.forEach((t, i)=>{
       const btn = document.getElementById('confPay_'+i);
